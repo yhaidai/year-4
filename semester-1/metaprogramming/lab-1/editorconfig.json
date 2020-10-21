@@ -1,0 +1,214 @@
+{
+  "case": {
+    "word_case":  {
+      "keywords": "Do not change",
+      "types": "Do not change",
+      "identifiers": "Do not change",
+      "aliases": "Do not change",
+      "quoted_identifiers": "Do not change",
+      "use_original_case": false
+    },
+    "quotation": {
+      "identifier_quotation": "Do not change",
+      "quotation_character": "Auto"
+    }
+  },
+  "queries": {
+    "common": {
+      "align_the_first_word_of_clause": "To left",
+      "place_clause_elements_on": "Same line",
+      "place_comma": "Auto",
+      "collapse_short_statements": "Subqueries only",
+      "keep_section_elements_under_section_header": true,
+      "align_section_elements": true,
+      "align_line_comments_at_right_of_elements": true
+    },
+    "insert_statement_and_values_clause": {
+      "place_into_on_the_new_line": "Do not change",
+      "place_into_clause_elements_on": "As in common",
+      "place_values_clause_elements_on": "As in common",
+      "place_the_opening_parenthesis": "On the same line",
+      "place_columns_or_values": "Same line aligned",
+      "place_the_closing_parenthesis": "At the end",
+      "wrap_columns_or_values": "Wrap if long",
+      "place_comma": "As in common",
+      "put_spaces_within_parentheses": false,
+      "collapse_short_multi_row_values": false
+    },
+    "update_statement": {
+      "place_elements_on": "As in common",
+      "wrap_elements": "Chop",
+      "place_comma": "As in common",
+      "align_equal_signs": true
+    },
+    "with_clause": {
+      "place_elements_on": "As in common",
+      "wrap_subqueries": "Chop",
+      "place_comma": "As in common",
+      "align_as": false
+    },
+    "select_clause": {
+      "place_elements_on": "As in common",
+      "wrap_elements": "Chop",
+      "place_comma": "As in common",
+      "new_line_after_all_and_distinct": false,
+      "keep_elements_on_one_line_if_less_than_or_equal": 7,
+      "use_as": "Do not change",
+      "align_as": true
+    },
+    "from_clause": {
+      "place_elements_on": "As in common",
+      "wrap_elements": "Chop",
+      "place_comma": "As in common",
+      "wrap_the_first_join": true,
+      "wrap_the_next_join": true,
+      "indent_join": true,
+      "place_join_in_join_only_queries_under": "Table (as usual)",
+      "align_joined_tables": false,
+      "align_table_aliases": false,
+      "wrap_on_and_using": false,
+      "place_on_and_using_under": "Table"
+    },
+    "where_and_having_clauses": {
+      "place_elements_on": "As in common",
+      "wrap_elements": "Chop",
+      "place_top_level_and_and_or": "To begin"
+    },
+    "group_by_and_order_by_clauses": {
+      "place_elements_on": "As in common",
+      "wrap_elements": "Wrap if long",
+      "place_comma": "As in common",
+      "align_asc_and_desc": false
+    },
+    "subquery": {
+      "place_the_opening_parenthesis": "Do not change",
+      "place_subquery": "Do not change",
+      "place_the_closing_parenthesis": "Do not change",
+      "put_spaces_within_parentheses": false
+    }
+  },
+  "ddl": {
+    "create_and_alter_table": {
+      "place_the_opening_parenthesis": "Aligned",
+      "place_elements": "Wrapped indented",
+      "place_the_closing_parenthesis": "Under opening",
+      "align_types": true,
+      "align_defaults": true,
+      "align_nullabilities": true,
+      "collapse_when_short": false,
+      "wrap_alter_instructions": "Yes",
+      "align_alter_instructions": true
+    },
+    "constraint": {
+      "wrap_constraint": true,
+      "wrap_key_and_check": false,
+      "wrap_references": false,
+      "wrap_cascade_and_deferrability": false
+    },
+    "create_schema": {
+      "indent_content": true,
+      "minimum_blank_lines_between_declaration": 1,
+      "maximum_blank_lines_between_declaration": 1
+    },
+    "views": {
+      "wrap_as": false,
+      "wrap_the_beginning_of_the_query": true,
+      "indent_query": false
+    },
+    "postfix_options": {
+      "wrap_first_option": false,
+      "wrap_next_option": true,
+      "indent_options": true,
+      "align_options": true
+    }
+  },
+  "code": {
+    "common": {
+      "wrap_every_statement": false,
+      "keep_blank_lines_in_code": 2,
+      "put_new_line_around_semicolon": false
+    },
+    "declared_variables": {
+      "wrap_section": true,
+      "wrap_variables": "Do not change",
+      "align_types": true,
+      "align_assignments": true,
+      "align_expressions": false
+    },
+    "routine_arguments": {
+      "place_the_opening_parenthesis": "On the same line",
+      "place_elements": "Do not change",
+      "place_the_closing_parenthesis": "Do not change",
+      "wrap_elements": "Wrap if long",
+      "place_comma": "Auto",
+      "put_spaces_within_parentheses": false,
+      "align_types": false
+    },
+    "routine_statement": {
+      "wrap_as": false,
+      "wrap_opening_dollar_signs": true,
+      "wrap_the_content_after_opening_dollar_signs": true,
+      "wrap_before_closing_dollar_signs": true,
+      "wrap_options_after_closing_dollar_signs": false
+    },
+    "if_then_else": {
+      "wrap_then": false,
+      "wrap_else": true,
+      "wrap_inner_code": true,
+      "indent_then_and_else": false,
+      "indent_end_if": false,
+      "collapse_when_short": true
+    },
+    "loops": {
+      "wrap_loop": true,
+      "indent_loop": true,
+      "indent_end_loop": false,
+      "collapse_when_short": false
+    }
+  },
+  "expressions": {
+    "cortege": {
+      "add_space_before_opening_brace": true,
+      "space_within_parentheses": false,
+      "place_comma_to_begin": false,
+      "space_before_comma": false,
+      "space_after_comma": true
+    },
+    "binary_expression": {
+      "use_spaces_around_operators": "Yes",
+      "align_operands_in_binary_expressions": true,
+      "space_between_parenthesized_subexpressions": false
+    },
+    "function_or_procedure_call": {
+      "space_within_parentheses": false,
+      "space_before_comma": false,
+      "space_after_comma": true
+    },
+    "case_clause": {
+      "wrap_when": true,
+      "indent_when_if_wrapped": true,
+      "wrap_then": false,
+      "align_then": false,
+      "align_else_under_then_when_then_aligned": false,
+      "align_end": "Do not change",
+      "keep_new_line_after_then_and_else": false,
+      "collapse_short_clause": true
+    }
+  },
+  "tabs_and_indents": {
+    "function_or_procedure_call": {
+      "use_tab_character": false,
+      "smart_tabs": false,
+      "tab_size": 4,
+      "indent": 4,
+      "continuation_indent": 8,
+      "keep_indents_on_empty_lines": false
+    }
+  },
+  "wrapping": {
+    "keep_when_reformatting": {
+      "line_breaks": true,
+      "comment_at_first_column": true
+    }
+  }
+}
