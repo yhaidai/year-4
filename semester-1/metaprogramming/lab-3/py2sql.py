@@ -1,7 +1,8 @@
 import os
 import sqlite3
 from array import array
-from sample_class import SampleClass
+
+from demo_classes import SampleClass
 
 
 class Py2SQL:
@@ -11,35 +12,44 @@ class Py2SQL:
         self.cursor = None
 
     @staticmethod
+    def __is_of_primitive_type(obj):
+        return type(obj) in (int, float, str, dict, tuple, list, set, frozenset)
+
+    @staticmethod
+    def __get_object_table_name(obj):
+        return 'object_' + type(obj).__name__
+
+    @staticmethod
     def __sqlite_type(obj):
         if type(obj) == int:
             columns = ['Value', ]
-            types = ['INTEGER', ]
+            types = [('INTEGER', None), ]
         elif type(obj) == float:
             columns = ['Value', ]
-            types = ['REAL', ]
+            types = [('REAL', None), ]
         elif type(obj) == array:
             columns = ['TypeCode', 'Value', ]
-            types = ['TEXT', 'TEXT', ]
+            types = [('TEXT', None), ('TEXT', None), ]
         elif type(obj) in (str, list, tuple, set, frozenset, dict):
             columns = ['Value', ]
-            types = ['TEXT', ]
+            types = [('TEXT', None), ]
         else:  # object
             columns = [''.join(list(map(str.capitalize, attr.split('_')))) for attr in obj.__dict__]
-            types = [Py2SQL.__sqlite_type(value)[1] for value in obj.__dict__.values()]
+            types = [(Py2SQL.__sqlite_type(value)[1], None) if Py2SQL.__is_of_primitive_type(value)
+                     else ('INTEGER', Py2SQL.__get_object_table_name(value)) for value in obj.__dict__.values()]
 
         return columns, types
 
     @staticmethod
     def __sqlite_repr(obj):
         if type(obj) in (set, frozenset, list, tuple):
-            return (str(list(obj))[1:-1], )
+            return (str(list(obj))[1:-1],)
         elif type(obj) == dict:
-            return (str(obj)[1:-1], )
+            return (str(obj)[1:-1],)
         elif type(obj) == array:
             return obj.typecode, str(list(obj))[1:-1]
         elif type(obj) in (int, float, str):
-            return (obj, )
+            return (obj,)
         else:  # object
             return tuple(obj.__dict__.values())
 
@@ -110,37 +120,37 @@ class Py2SQL:
         :param obj: object instance to be saved
         :return: None
         """
-        table_name = 'object_' + type(obj).__name__
+        table_name = Py2SQL.__get_object_table_name(obj)
         columns, types = Py2SQL.__sqlite_type(obj)
         id_column_name, id_column_type = 'ID', 'INTEGER'
-        # print('''
-        #                     CREATE TABLE {} (
-        #                     {} {} PRIMARY KEY,
-        #                     {}
-        #                     );
-        #                     '''.format(table_name,
-        #                                id_column_name,
-        #                                id_column_type,
-        #                                ','.join(['{} {} NOT NULL'.format(columns[i], types[i])
-        #                                          for i in range(len(types))])))
-        self.cursor.execute('''
-                            CREATE TABLE {} (
-                            {} {} PRIMARY KEY,
-                            {}
-                            );
-                            '''.format(table_name,
-                                       id_column_name,
-                                       id_column_type,
-                                       ','.join(['{} {} NOT NULL'.format(columns[i], types[i])
-                                                 for i in range(len(types))]))
-                            )
+        try:
+            self.cursor.execute('''
+                                CREATE TABLE {} (
+                                {} {} PRIMARY KEY,
+                                {}
+                                );
+                                '''.format(table_name,
+                                           id_column_name,
+                                           id_column_type,
+                                           ','.join(
+                                               ['{} {} NOT NULL'.format(columns[i], types[i][0]) if types[i][1] is None
+                                                else '{} {} REFERENCES {}(ID)'.format(columns[i], *types[i])
+                                                for i in range(len(types))]))
+                                )
+        except sqlite3.OperationalError:  # table already exists
+            pass
         columns.insert(0, id_column_name)
-        types.insert(0, id_column_type)
 
-        values = (id(obj), *Py2SQL.__sqlite_repr(obj))
-
-        # if hasattr(obj, '__dict__'):  # object
-        #     map(self.save_object, tuple(obj.__dict__.values()))
+        if hasattr(obj, '__dict__'):  # object
+            values = [id(obj)]
+            for value in obj.__dict__.values():
+                if not Py2SQL.__is_of_primitive_type(value):
+                    self.save_object(value)
+                    values.append(id(value))  # save foreign key for composite object
+                else:
+                    values.append(Py2SQL.__sqlite_repr(value)[0])
+        else:
+            values = (id(obj), *Py2SQL.__sqlite_repr(obj))
 
         self.cursor.execute('''
         INSERT OR REPLACE INTO {} {}
@@ -167,7 +177,17 @@ class Py2SQL:
         :param obj: object instance to be saved
         :return: None
         """
-        pass
+        table_name = Py2SQL.__get_object_table_name(obj)
+        self.cursor.execute('DELETE FROM {} WHERE ID = {};'.format(table_name, id(obj)))
+        if len(self.cursor.execute('SELECT ID FROM {}'.format(table_name)).fetchall()) == 0:
+            self.cursor.execute('DROP TABLE {}'.format(table_name))
+
+        if hasattr(obj, '__dict__'):  # object
+            for value in obj.__dict__.values():
+                if not Py2SQL.__is_of_primitive_type(value):
+                    self.delete_object(value)  # cascade delete
+
+        self.connection.commit()
 
     def delete_class(self, cls):
         """
@@ -191,15 +211,26 @@ if __name__ == '__main__':
     showcase_table_name = 'object_int'
 
     py2sql.save_object(1)
-    py2sql.save_object(1.1)
+
+    f = 1.1
+    py2sql.save_object(f)
+    py2sql.delete_object(f)
+    py2sql.save_object(2.2)
+
     py2sql.save_object('some str')
     py2sql.save_object([1, 2])
     py2sql.save_object((1, 2))
     py2sql.save_object({1, 2})
     py2sql.save_object(frozenset((1, 2)))
     py2sql.save_object({'key': 'str', 1: 'int', (1, 2, 3): 'tuple'})
-    py2sql.save_object(array('i', [1, 2]))
-    # py2sql.save_object(SampleClass())
+
+    a = array('i', [1, 2])
+    py2sql.save_object(a)
+
+    sc = SampleClass(4)
+    py2sql.save_object(sc)
+    py2sql.delete_object(sc)
+    py2sql.save_object(SampleClass())
 
     print('Engine:', py2sql.db_engine())
     print('Name:', py2sql.db_name())
