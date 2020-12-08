@@ -12,15 +12,47 @@ class Py2SQL:
         self.cursor = None
 
     @staticmethod
-    def __is_of_primitive_type(obj):
+    def __is_of_primitive_type(obj) -> bool:
+        """
+        Check whether given object is of primitive type i.e. is represented by a single field in SQLite database, thus
+        can be embedded into 'composite' objects
+
+        :param obj: object to be type-checked
+        :rtype: bool
+        :return: True if object is of primitive type, False otherwise
+        """
         return type(obj) in (int, float, str, dict, tuple, list, set, frozenset)
 
     @staticmethod
-    def __get_object_table_name(obj):
+    def __get_object_table_name(obj) -> str:
+        """
+        Build name of the table which should store objects of the same type as given one
+
+        :param obj: object to build respective table name from
+        :rtype: str
+        :return: name of table to store object in
+        """
         return 'object_' + type(obj).__name__
 
     @staticmethod
-    def __sqlite_type(obj):
+    def __sqlite_type(obj) -> tuple:
+        """
+        Retrieve column names and types of SQLite table which should store objects of the same type as given one
+
+        int, float and str are represented as INTEGER, REAL and TEXT fields respectively
+        set, frozenset, list, tuple, dict collections are stored in TEXT field as comma separated list of their elements
+        array is represented as two TEXT fields: first containing its typecode and second containing its elements
+        object is represented as tuple of its attributes whereas each attribute of primitive type is stored as
+        described above meanwhile each composite attribute is represented by foreign key INTEGER field containing id of
+        the referenced object
+
+        :param obj: object to be stored in SQLite table
+        :rtype: tuple
+        :return: tuple of two lists containing column names and types respectively, list containing column types stores
+        two-element tuples of form (sqlite_type: str, foreign_key_reference: str) where foreign_key_reference being None
+        means absence of the reference while if some other table is to be referenced it should be equal to the name
+        of the respective table
+        """
         if type(obj) == int:
             columns = ['Value', ]
             types = [('INTEGER', None), ]
@@ -41,7 +73,21 @@ class Py2SQL:
         return columns, types
 
     @staticmethod
-    def __sqlite_repr(obj):
+    def __sqlite_repr(obj) -> tuple:
+        """
+        Retrieve SQLite representation of given object
+
+        int, float and str are represented as INTEGER, REAL and TEXT fields respectively
+        set, frozenset, list, tuple, dict collections are stored in TEXT field as comma separated list of their elements
+        array is represented as two TEXT fields: first containing its typecode and second containing its elements
+        object is represented as tuple of its attributes whereas each attribute of primitive type is stored as
+        described above meanwhile each composite attribute is represented by foreign key INTEGER field containing id of
+        the referenced object
+
+        :param obj: object to be represented in SQLite database
+        :rtype: tuple
+        :return: tuple of values(presumably object's attributes) to be stored in the respective database table
+        """
         if type(obj) in (set, frozenset, list, tuple):
             return (str(list(obj))[1:-1],)
         elif type(obj) == dict:
@@ -53,7 +99,7 @@ class Py2SQL:
         else:  # object
             return tuple(obj.__dict__.values())
 
-    def db_connect(self, db_filepath: str):
+    def db_connect(self, db_filepath: str) -> None:
         """
         Connect to the database in given path
 
@@ -65,13 +111,18 @@ class Py2SQL:
         self.connection = sqlite3.connect(db_filepath)
         self.cursor = self.connection.cursor()
 
-    def db_disconnect(self):
+    def db_disconnect(self) -> None:
+        """
+        Disconnect from the current database
+
+        :return: None
+        """
         self.connection.close()
         self.filename = None
         self.connection = None
         self.cursor = None
 
-    def db_engine(self):
+    def db_engine(self) -> tuple:
         """
         Retrieve database name and version
 
@@ -83,10 +134,10 @@ class Py2SQL:
         name = self.db_name()
         return name, version
 
-    def db_name(self):
+    def db_name(self) -> str:
         pass
 
-    def db_size(self):
+    def db_size(self) -> float:
         """
         Retrieve connected database size in Mb
 
@@ -98,7 +149,7 @@ class Py2SQL:
     def db_tables(self):
         pass
 
-    def db_table_structure(self, table_name: str):
+    def db_table_structure(self, table_name: str) -> list:
         """
         Retrieve ordered list of tuples of form (id, name, type) which describe given table's columns
 
@@ -113,7 +164,7 @@ class Py2SQL:
 
     # Python -> SQLite
 
-    def save_object(self, obj):
+    def save_object(self, obj) -> None:
         """
         Save given object instance's representation into database or update it if it already exists
 
@@ -158,7 +209,7 @@ class Py2SQL:
         '''.format(table_name, str(tuple(columns)), ('?,' * len(values))[:-1]), values)
         self.connection.commit()
 
-    def save_class(self, cls):
+    def save_class(self, cls) -> None:
         """
         Save given class instance's representation into database or update it if it already exists
 
@@ -167,10 +218,10 @@ class Py2SQL:
         """
         pass
 
-    def save_hierarchy(self, root_class):
+    def save_hierarchy(self, root_class) -> None:
         pass
 
-    def delete_object(self, obj):
+    def delete_object(self, obj) -> None:
         """
         Delete given object instance's representation from database if it already existed
 
@@ -189,7 +240,7 @@ class Py2SQL:
 
         self.connection.commit()
 
-    def delete_class(self, cls):
+    def delete_class(self, cls) -> None:
         """
         Delete given class instance's representation from database if it already existed
 
@@ -198,7 +249,7 @@ class Py2SQL:
         """
         pass
 
-    def delete_hierarchy(self, root_class):
+    def delete_hierarchy(self, root_class) -> None:
         pass
 
 
