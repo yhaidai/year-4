@@ -135,7 +135,13 @@ class Py2SQL:
         return name, version
 
     def db_name(self) -> str:
-        pass
+        query = "PRAGMA database_list;"
+        self.cursor.execute(query)
+        db_info = self.cursor.fetchone()
+
+        if db_info:
+            return db_info[1]
+        return ""
 
     def db_size(self) -> float:
         """
@@ -147,7 +153,16 @@ class Py2SQL:
         return os.path.getsize(self.filename) / (1024 * 1024.0)
 
     def db_tables(self):
-        pass
+        """
+        Retrieve all the tables names present in database.
+
+        :return: list of database tables names
+        """
+        query = "SELECT tbl_name FROM sqlite_master;"
+        self.cursor.execute(query)
+        tables_info = self.cursor.fetchall()
+        return list(map(lambda t: t[0], list(tables_info)))
+
 
     def db_table_structure(self, table_name: str) -> list:
         """
@@ -251,7 +266,6 @@ class Py2SQL:
 
     def delete_hierarchy(self, root_class) -> None:
         pass
-
 
 if __name__ == '__main__':
     database_filepath = 'example.db'
