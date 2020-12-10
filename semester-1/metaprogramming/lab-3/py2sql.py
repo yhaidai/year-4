@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from array import array
+from inspect import *
 
 from demo_classes import SampleClass
 
@@ -224,14 +225,114 @@ class Py2SQL:
         '''.format(table_name, str(tuple(columns)), ('?,' * len(values))[:-1]), values)
         self.connection.commit()
 
+    @staticmethod
+    def __is_magic_attr(attr_name):
+        return attr_name.startswith("__") and attr_name.endswith("__")
+
+    @staticmethod
+    def __is_primitive_type(cls_obj):
+        """
+        Checks if input class object belongs to primitive built-in types
+        :param cls_obj:
+        :return: bool
+        """
+
+        return cls_obj in (int, float, str, dict, tuple, list, set, frozenset)
+
+    @staticmethod
+    def __get_class_table_name(cls_obj):
+        """Defines database table name for class representation
+
+            :return str
+        """
+
+        if Py2SQL.__is_of_primitive_type(cls_obj):
+            return 'object_' + cls_obj.__name__
+        return 'class_' + cls_obj.__name__
+
+    def __table_exists(self, table_name):
+        """
+        Checks if table with table name exists in database
+        :param table_name: table name
+        :return: bool, exists or not
+        """
+
+        for tbl_name in self.db_tables():
+            if tbl_name == table_name:
+                return True
+        return False
+
+    def __create_or_update_table(self, cls):
+        """
+        Consider cls as primitive type or as class with primitive attributes
+        :param cls: primitive type (int, str, ...,) or class with primitive attributes
+        :return: table name, id column name
+        """
+        # todo
+        table_name = self.__get_class_table_name(cls)
+        if (self.__is_primitive_type(cls)):
+            pass
+        else:
+            pass
+
+        return "table_name", "ID"
+
+    @staticmethod
+    def __get_data_fields_names(cls_obj):
+        """
+        Retrieves from class object data field names.
+
+        Not includes magic attributes and functions (methods)
+        :param cls_obj:
+        :return: list(str, str,...)
+        """
+        data_attr_names = list()
+        for k in cls_obj.__dict__.keys():
+            if not Py2SQL.__is_magic_attr(k) and not isfunction(getattr(cls_obj, k)):
+                data_attr_names.append(k)
+
+        return data_attr_names
+
+    def __create_or_update_col(self, table_name):
+        """
+        Creates or updates if exist colunb in table_name table
+        :param table_name:
+        :return:
+        """
+        pass
+
     def save_class(self, cls) -> None:
         """
         Save given class instance's representation into database or update it if it already exists
 
+        Creates ooupdates tables structure to represent class object
         :param cls: class instance to be saved
         :return: None
         """
-        pass
+        if Py2SQL.__is_primitive_type(cls):
+            # check if table exists and create if not
+            class_table_name = Py2SQL.__get_class_table_name(cls)
+            if not self.__table_exists(class_table_name):
+                self.__create_or_update_table(cls)
+                return
+
+        # create table or check if exists todo
+        (tbl_name, id_name) = self.__create_or_update_table(cls)
+
+        # base classes contain also current class
+        base_classes = cls.__mro__
+        for base_class in reversed(base_classes):
+            if base_class == object:
+                continue
+            else:
+                data_fields = Py2SQL.__get_data_fields(base_class)
+                for df in data_fields:
+                    if Py2SQL.__is_primitive_type(type(getattr(cls, df))):
+                        self.__create_or_update_col(tbl_name)
+                    else:
+                        # create foreign id column, get tablename and id from save_class() method
+                        # so that foreign key could be generated
+                        Py2SQL.save_class(getattr(cls, df))
 
     def save_hierarchy(self, root_class) -> None:
         pass
