@@ -226,7 +226,13 @@ class Py2SQL:
         self.connection.commit()
 
     @staticmethod
-    def __is_magic_attr(attr_name):
+    def __is_magic_attr(attr_name) -> bool:
+        """
+        Defines is given attribute name is built-in magic attribute name
+
+        :param attr_name:
+        :return: bool
+        """
         return attr_name.startswith("__") and attr_name.endswith("__")
 
     @staticmethod
@@ -246,9 +252,10 @@ class Py2SQL:
             :return str
         """
 
+        prefix = cls_obj.__module__.replace(".", "_") + "_"
         if Py2SQL.__is_of_primitive_type(cls_obj):
-            return 'object_' + cls_obj.__name__
-        return 'class_' + cls_obj.__name__
+            return prefix + cls_obj.__name__
+        return prefix + cls_obj.__name__
 
     def __table_exists(self, table_name):
         """
@@ -268,14 +275,16 @@ class Py2SQL:
         :param cls: primitive type (int, str, ...,) or class with primitive attributes
         :return: table name, id column name
         """
-        # todo
         table_name = self.__get_class_table_name(cls)
         if (self.__is_primitive_type(cls)):
-            pass
+            query = '''CREATE TABLE IF NOT EXISTS ()'''
+            self.cursor.execute(query)
         else:
             pass
 
-        return "table_name", "ID"
+        self.connection.commit()
+
+        return table_name, "ID"
 
     @staticmethod
     def __get_data_fields_names(cls_obj):
