@@ -2,6 +2,8 @@
     Module responsible for decorator for classes to use in py2sql
 """
 
+PY2SQL_ID_NAME = '___id'
+
 def model_py2sql(c):
     """
     Decorator for data models.
@@ -20,3 +22,4 @@ def model_py2sql(c):
     setattr(c, 'py2sql_set_id', py2sql_set_id)
     setattr(c, '___id', int())
     return c
+

@@ -1,8 +1,17 @@
+"""
+Module implements simple ORM for SQLite.
+
+Module excludes using many-to-many and one-to-many relationships.
+Trying to save the same object (update) with another aggregated object
+will rewrite old object!
+"""
+
 import os
 import sqlite3
 from array import array
 from inspect import *
 
+from util import *
 from demo_classes import SampleClass
 
 
@@ -226,7 +235,7 @@ class Py2SQL:
         self.connection.commit()
 
     @staticmethod
-    def __is_magic_attr(attr_name) -> bool:
+    def __is_magic_attr(attr_name: str) -> bool:
         """
         Defines is given attribute name is built-in magic attribute name
 
@@ -244,6 +253,13 @@ class Py2SQL:
         """
 
         return cls_obj in (int, float, str, dict, tuple, list, set, frozenset)
+
+    @staticmethod
+    def __get_column_name(cls, attr_name=""):
+        if Py2SQL.__is_primitive_type(cls):
+            return cls.__name__
+        else:
+            return attr_name
 
     @staticmethod
     def __get_class_table_name(cls_obj):
@@ -277,14 +293,16 @@ class Py2SQL:
         """
         table_name = self.__get_class_table_name(cls)
         if (self.__is_primitive_type(cls)):
-            query = '''CREATE TABLE IF NOT EXISTS ()'''
+            col_name = 'value' #todo
+            col_type = 'text'  # todo get mapped type
+            query = '''CREATE TABLE IF NOT EXISTS {} ({} {})'''.format(table_name, col_name, col_type)
             self.cursor.execute(query)
         else:
             pass
 
         self.connection.commit()
 
-        return table_name, "ID"
+        return table_name, "rowid"
 
     @staticmethod
     def __get_data_fields_names(cls_obj):
@@ -297,7 +315,8 @@ class Py2SQL:
         """
         data_attr_names = list()
         for k in cls_obj.__dict__.keys():
-            if not Py2SQL.__is_magic_attr(k) and not isfunction(getattr(cls_obj, k)):
+            if not Py2SQL.__is_magic_attr(k) and not isfunction(getattr(cls_obj, k))\
+                    and PY2SQL_ID_NAME != k:
                 data_attr_names.append(k)
 
         return data_attr_names
@@ -314,7 +333,7 @@ class Py2SQL:
         """
         Save given class instance's representation into database or update it if it already exists
 
-        Creates ooupdates tables structure to represent class object
+        Creates or updates tables structure to represent class object
         :param cls: class instance to be saved
         :return: None
         """
@@ -379,39 +398,41 @@ class Py2SQL:
 
 if __name__ == '__main__':
     database_filepath = 'example.db'
-    os.remove(database_filepath)
+    # os.remove(database_filepath)
 
     py2sql = Py2SQL()
     py2sql.db_connect(database_filepath)
-    showcase_table_name = 'object_int'
-
-    py2sql.save_object(1)
-
-    f = 1.1
-    py2sql.save_object(f)
-    py2sql.delete_object(f)
-    py2sql.save_object(2.2)
-
-    py2sql.save_object('some str')
-    py2sql.save_object([1, 2])
-    py2sql.save_object((1, 2))
-    py2sql.save_object({1, 2})
-    py2sql.save_object(frozenset((1, 2)))
-    py2sql.save_object({'key': 'str', 1: 'int', (1, 2, 3): 'tuple'})
-
-    a = array('i', [1, 2])
-    py2sql.save_object(a)
-
-    sc = SampleClass(4)
-    py2sql.save_object(sc)
-    py2sql.delete_object(sc)
-    py2sql.save_object(SampleClass())
-
-    print('Engine:', py2sql.db_engine())
-    print('Name:', py2sql.db_name())
-    print('Size in Mb:', py2sql.db_size())
-    print('Tables:', py2sql.db_tables())
-    print('{} table structure:'.format(showcase_table_name), py2sql.db_table_structure(showcase_table_name))
-    print('{} table size:'.format(showcase_table_name), py2sql.db_table_size(showcase_table_name))
+    # showcase_table_name = 'object_int'
+    #
+    # py2sql.save_object(1)
+    #
+    # f = 1.1
+    # py2sql.save_object(f)
+    # py2sql.delete_object(f)
+    # py2sql.save_object(2.2)
+    #
+    # py2sql.save_object('some str')
+    # py2sql.save_object([1, 2])
+    # py2sql.save_object((1, 2))
+    # py2sql.save_object({1, 2})
+    # py2sql.save_object(frozenset((1, 2)))
+    # py2sql.save_object({'key': 'str', 1: 'int', (1, 2, 3): 'tuple'})
+    #
+    # a = array('i', [1, 2])
+    # py2sql.save_object(a)
+    #
+    # sc = SampleClass(4)
+    # py2sql.save_object(sc)
+    # py2sql.delete_object(sc)
+    # py2sql.save_object(SampleClass())
+    #
+    # print('Engine:', py2sql.db_engine())
+    # print('Name:', py2sql.db_name())
+    # print('Size in Mb:', py2sql.db_size())
+    # print('Tables:', py2sql.db_tables())
+    # print('{} table structure:'.format(showcase_table_name), py2sql.db_table_structure(showcase_table_name))
+    # print('{} table size:'.format(showcase_table_name), py2sql.db_table_size(showcase_table_name))
+    #
+    py2sql._Py2SQL__create_or_update_table(int)
 
     py2sql.db_disconnect()
