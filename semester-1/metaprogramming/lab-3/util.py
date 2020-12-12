@@ -31,3 +31,18 @@ def model_py2sql(c):
     setattr(c, '___id', int())
     return c
 
+
+class ModelPy2SQL:
+    """
+    Class wrapper for user's class to add model's attributes.
+    """
+    __id = int()
+
+    def __init__(self, obj):
+        self.obj = obj
+
+    def get_id(self):
+        return self.__id
+
+    def set_id(self, id):
+        self.__id = id
