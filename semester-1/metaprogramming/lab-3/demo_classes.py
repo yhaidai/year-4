@@ -40,5 +40,18 @@ class C(A):
     b = B()
     nc = int()
 
+
+class E:
+    pass
+
+class F(E):
+    pass
+
+class J(E):
+    pass
+
+class H(J):
+    pass
+
 if __name__ == '__main__':
     pass

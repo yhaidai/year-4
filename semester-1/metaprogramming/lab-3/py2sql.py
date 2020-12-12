@@ -332,13 +332,14 @@ class Py2SQL:
                 self.cursor.execute(query)
             else:
                 # todo ? add all columns?
+                query = '''CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT'''
                 cols_query = ""
                 for df in data_fields:
+                    cols_query += ", "
                     col_name = Py2SQL.__get_column_name(None, df)
                     col_type, _ = Py2SQL.__sqlite_column_from_primitive(type(getattr(cls, df)))
-                    cols_query = col_name + " " + col_type + ", "
-                cols_query = cols_query[:-2]
-                query = '''CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT, ''' + cols_query + ")"
+                    cols_query += col_name + " " + col_type
+                query = query + cols_query + ")"
                 print(query)
                 query_ex = query.format(table_name, PY2SQL_COLUMN_ID_NAME)
                 self.cursor.execute(query_ex)
@@ -450,7 +451,18 @@ class Py2SQL:
 
 
     def save_hierarchy(self, root_class) -> None:
-        pass
+        """
+        Saves all classes derived from root_class and classes these classes depends on
+
+        :param root_class:
+        :return:
+        """
+        self.save_class(root_class)
+        subclasses = root_class.__subclasses__()
+        if len(subclasses) == 0:
+            return
+        for c in subclasses:
+            self.save_hierarchy(c)
 
     def delete_object(self, obj) -> None:
         """
@@ -521,8 +533,9 @@ if __name__ == '__main__':
     # print('{} table size:'.format(showcase_table_name), py2sql.db_table_size(showcase_table_name))
     #
     # py2sql._Py2SQL__create_or_update_table(int)
-    py2sql.save_class(C)
+    # py2sql.save_class(C)
     # py2sql.save_class(B)
     # py2sql.save_class(tuple)
+    py2sql.save_hierarchy(E)
 
     py2sql.db_disconnect()
