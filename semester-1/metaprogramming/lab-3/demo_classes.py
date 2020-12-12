@@ -30,5 +30,15 @@ class SampleClass(SampleSuperClass):
         self.aggregated_object_attr = AggregatedClass()
 
 
+class A:
+    a = int()
+
+class B:
+    n = int()
+
+class C(A):
+    b = B()
+    nc = int()
+
 if __name__ == '__main__':
     pass

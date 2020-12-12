@@ -13,6 +13,7 @@ from inspect import *
 
 from util import *
 from demo_classes import SampleClass
+from demo_classes import *
 
 
 class Py2SQL:
@@ -255,8 +256,32 @@ class Py2SQL:
         return cls_obj in (int, float, str, dict, tuple, list, set, frozenset)
 
     @staticmethod
+    def __sqlite_column_from_primitive(attr_class, attr_name="") -> tuple:
+        """
+        Implementing python on sqlite types mapping
+        Author: Yehor
+
+        :param obj:
+        :return: (column sqlite type, column name)
+        """
+        if not Py2SQL.__is_primitive_type(attr_class):
+            raise ValueError("Primitive type expected!")
+
+        # TODO
+        col_name = ""
+
+        if attr_class == int:
+            return "INTEGER", col_name
+        elif attr_class == float:
+            return 'REAL', col_name
+        elif attr_class == array:
+            return "TEXT", col_name
+        elif attr_class in (str, list, tuple, set, frozenset, dict):
+            return 'TEXT', col_name
+
+    @staticmethod
     def __get_column_name(cls, attr_name=""):
-        if Py2SQL.__is_primitive_type(cls):
+        if attr_name == "":
             return cls.__name__
         else:
             return attr_name
@@ -293,16 +318,22 @@ class Py2SQL:
         """
         table_name = self.__get_class_table_name(cls)
         if (self.__is_primitive_type(cls)):
-            col_name = 'value' #todo
-            col_type = 'text'  # todo get mapped type
-            query = '''CREATE TABLE IF NOT EXISTS {} ({} {})'''.format(table_name, col_name, col_type)
+            col_name = Py2SQL.__get_column_name(cls)
+            col_type, _ = Py2SQL.__sqlite_column_from_primitive(cls)
+            query = '''CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT, {} {})'''\
+                .format(table_name, PY2SQL_COLUMN_ID_NAME, col_name, col_type)
             self.cursor.execute(query)
         else:
-            pass
+            data_fields = Py2SQL.__get_data_fields_names(cls)
+            if not all(list(map(lambda df: Py2SQL.__is_primitive_type(type(getattr(cls, df))),
+                                data_fields))):
+                query = '''CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT)'''\
+                    .format(table_name, PY2SQL_COLUMN_ID_NAME)
+                self.cursor.execute(query)
 
         self.connection.commit()
 
-        return table_name, "rowid"
+        return table_name, PY2SQL_COLUMN_ID_NAME
 
     @staticmethod
     def __get_data_fields_names(cls_obj):
@@ -321,46 +352,87 @@ class Py2SQL:
 
         return data_attr_names
 
-    def __create_or_update_col(self, table_name):
+    def __create_or_update_col(self, table_name: str, cls, attr_name: str, attribute):
         """
-        Creates or updates if exist colunb in table_name table
+        Creates or updates if exist column in table_name table
         :param table_name:
+        :param cls: primitive type?
         :return:
         """
-        pass
+        if (Py2SQL.__is_primitive_type(type(attribute))):
+            col_type, _ = Py2SQL.__sqlite_column_from_primitive(attribute.__class__)
+            col_name = Py2SQL.__get_column_name(attribute.__class__, attr_name)
+            query = "ALTER TABLE {} ADD COLUMN {} {}".format(table_name, col_name, col_type)
+            try:
+                self.cursor.execute(query)
+                self.connection.commit()
+            except Exception:
+                pass
+        else:
+            mes = "Trying to create column from " + str(type(attribute)) + ". Primitive type expected"
+            raise Exception(mes)
 
-    def save_class(self, cls) -> None:
+    @staticmethod
+    def __get_foreign_key_name(attribute_name, reference_on_table_name) -> str:
+        """
+
+        :param attribute_name: class attribute name keeping not primitive attribute
+        :param reference_on_table_name: table name for foreign key to reference on
+        :return:
+        """
+        return "a_fk_" + attribute_name + "_" + reference_on_table_name
+
+    def __add_foreign_key(self, fk_name: str, tbl_from: str, tbl_to: str) -> None:
+        """
+        Inserts foreign key column in the table.
+
+        In SQLIte foreign key constaints cannot be added after table creation.
+        So foreign key colums is line any common colon but with specific name
+
+        :param fk_name:
+        :param tbl_from:
+        :param tbl_to:
+        :return: None
+        """
+        foreign_type = "INTEGER"
+        query = "ALTER TABLE {} ADD COLUMN {} {}".format(tbl_from, fk_name, foreign_type)
+        try:
+            self.cursor.execute(query)
+            self.connection.commit()
+        except Exception:
+            pass
+
+    def save_class(self, cls) -> 'class table name':
         """
         Save given class instance's representation into database or update it if it already exists
 
         Creates or updates tables structure to represent class object
         :param cls: class instance to be saved
-        :return: None
+        :return: class table name
         """
         if Py2SQL.__is_primitive_type(cls):
-            # check if table exists and create if not
-            class_table_name = Py2SQL.__get_class_table_name(cls)
-            if not self.__table_exists(class_table_name):
-                self.__create_or_update_table(cls)
-                return
+            (class_table_name, id_col) = self.__create_or_update_table(cls)
+            return class_table_name
 
-        # create table or check if exists todo
-        (tbl_name, id_name) = self.__create_or_update_table(cls)
+        tbl_name, id_name = self.__create_or_update_table(cls)
 
-        # base classes contain also current class
+        # base classes contain also current class and object class
         base_classes = cls.__mro__
         for base_class in reversed(base_classes):
             if base_class == object:
                 continue
             else:
-                data_fields = Py2SQL.__get_data_fields(base_class)
-                for df in data_fields:
-                    if Py2SQL.__is_primitive_type(type(getattr(cls, df))):
-                        self.__create_or_update_col(tbl_name)
+                data_fields = Py2SQL.__get_data_fields_names(base_class)
+                for df_name in data_fields:
+                    attribute = getattr(cls, df_name)
+                    if Py2SQL.__is_primitive_type(type(attribute)):
+                        self.__create_or_update_col(tbl_name, cls, df_name, attribute)
                     else:
-                        # create foreign id column, get tablename and id from save_class() method
-                        # so that foreign key could be generated
-                        Py2SQL.save_class(getattr(cls, df))
+                        parent_table_name = self.save_class(getattr(cls, df_name).__class__)
+                        fk_name = Py2SQL.__get_foreign_key_name(df_name, parent_table_name)
+                        self.__add_foreign_key(fk_name, tbl_name, parent_table_name)
+        return tbl_name
+
 
     def save_hierarchy(self, root_class) -> None:
         pass
@@ -433,6 +505,7 @@ if __name__ == '__main__':
     # print('{} table structure:'.format(showcase_table_name), py2sql.db_table_structure(showcase_table_name))
     # print('{} table size:'.format(showcase_table_name), py2sql.db_table_size(showcase_table_name))
     #
-    py2sql._Py2SQL__create_or_update_table(int)
+    # py2sql._Py2SQL__create_or_update_table(int)
+    py2sql.save_class(C)
 
     py2sql.db_disconnect()

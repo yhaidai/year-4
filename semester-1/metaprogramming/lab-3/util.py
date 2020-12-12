@@ -3,6 +3,11 @@
 """
 
 PY2SQL_ID_NAME = '___id'
+PY2SQL_COLUMN_STUB_NAME = '___stub'
+PY2SQL_COLUMN_STUB_TYPE = 'TEXT'
+
+PY2SQL_COLUMN_ID_TYPE = "INTEGER"
+PY2SQL_COLUMN_ID_NAME = "___id"
 
 def model_py2sql(c):
     """
