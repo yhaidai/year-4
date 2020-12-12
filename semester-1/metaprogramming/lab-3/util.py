@@ -9,6 +9,7 @@ PY2SQL_COLUMN_STUB_TYPE = 'TEXT'
 PY2SQL_COLUMN_ID_TYPE = "INTEGER"
 PY2SQL_COLUMN_ID_NAME = "___id"
 
+
 def model_py2sql(c):
     """
     Decorator for data models.
@@ -23,8 +24,24 @@ def model_py2sql(c):
         self.___id = int(id)
     def py2sql_get_id(self):
         return self.___id
+
     setattr(c, 'py2sql_get_id', py2sql_get_id)
     setattr(c, 'py2sql_set_id', py2sql_set_id)
     setattr(c, '___id', int())
     return c
 
+
+class ModelPy2SQL:
+    """
+    Class wrapper for user's class to add model's attributes.
+    """
+    __id = int()
+
+    def __init__(self, obj):
+        self.obj = obj
+
+    def get_id(self):
+        return self.__id
+
+    def set_id(self, id):
+        self.__id = id

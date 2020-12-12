@@ -415,6 +415,25 @@ class Py2SQL:
         except Exception:
             pass
 
+    def __find_all_depending_tables(self):
+        pass
+
+    def __drop_table(self, table_name) -> None:
+        """
+        Drops table with table_name
+
+        :param table_name: name of table to be dropped
+        :return: None
+        """
+
+        query = "DROP TABLE IF EXISTS {}".format(table_name)
+        self.cursor.execute(query)
+        self.connection.commit()
+
+    def __save_class_metainfo(self, class_obj):
+        # if not exists, create table for class info, next insert
+        pass
+
     def save_class(self, cls) -> 'class table name':
         """
         Save given class instance's representation into database or update it if it already exists
