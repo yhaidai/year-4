@@ -33,8 +33,10 @@ class SampleClass(SampleSuperClass):
 class A:
     a = int()
 
+
 class B:
     n = int()
+
 
 class C(A):
     b = B()
@@ -44,14 +46,18 @@ class C(A):
 class E:
     pass
 
-class F(E):
+
+class F(C, E):
     pass
+
 
 class J(E):
     pass
 
+
 class H(J):
     pass
 
+
 if __name__ == '__main__':
-    pass
+    print(F.__dict__)
