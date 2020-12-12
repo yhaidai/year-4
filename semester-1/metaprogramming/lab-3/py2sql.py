@@ -10,6 +10,7 @@ import os
 import sqlite3
 from array import array
 from inspect import *
+import builtins
 
 from util import *
 from demo_classes import SampleClass
@@ -142,6 +143,44 @@ class Py2SQL:
         self.connection.commit()
 
         return self.cursor.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+    def __redefine_id_function(self, my_id):
+        """
+        Replace id() global function so that it returns my_id
+
+        To cancel effect of this func call __reset_id_function() method.
+        :param my_id: value to be returned after id() call
+        :return: my_id
+        """
+
+        def id(ob):
+            return my_id
+
+        globals()['id'] = id
+
+    def __reset_id_function(self):
+        globals()['id'] = builtins.id
+
+    def save_object_with_update(self, obj):
+        """
+        Inserts or updates obj related data
+
+        :param obj: object to be saved or updated in db
+        :return: object of type util.ModelPy2SQL
+        """
+
+        w = None
+        # todo check save_object to return rowid (ID)
+        if type(obj) != ModelPy2SQL:
+            new_id = self.save_object(obj)
+            w = ModelPy2SQL(obj, new_id)
+        else:
+            # todo SELECT py_id by rowid(ID)
+            python_obj_id = ""
+            self.__redefine_id_function(python_obj_id)
+            self.save_object(obj.obj)
+            self.__reset_id_function()
+        return w
 
     @staticmethod
     def __get_object_column_name(attr_name: str):

@@ -58,11 +58,13 @@ class ModelPy2SQL:
     """
     __id = int()
 
-    def __init__(self, obj):
+    def __init__(self, obj, id=0):
         self.obj = obj
+        self.__id = id
 
     def get_id(self):
         return self.__id
 
     def set_id(self, id):
         self.__id = id
+
