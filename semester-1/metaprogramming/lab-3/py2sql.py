@@ -454,8 +454,8 @@ class Py2SQL:
         """
         Saves all classes derived from root_class and classes these classes depends on
 
-        :param root_class:
-        :return:
+        :param root_class: Base class to save with all derived classes
+        :return: None
         """
         self.save_class(root_class)
         subclasses = root_class.__subclasses__()
@@ -468,7 +468,7 @@ class Py2SQL:
         """
         Delete given object instance's representation from database if it already existed
 
-        :param obj: object instance to be saved
+        :param obj: object instance to be deleted
         :return: None
         """
         table_name = Py2SQL.__get_object_table_name(obj)
@@ -485,15 +485,33 @@ class Py2SQL:
 
     def delete_class(self, cls) -> None:
         """
-        Delete given class instance's representation from database if it already existed
+        Delete given class instance's representation from database if it already existed.
 
-        :param cls: object instance to be saved
+        Drops corresponding table.
+
+        :param cls: object instance to be delete
         :return: None
         """
-        pass
+        tbl_name = Py2SQL.__get_class_table_name(cls)
+        query = "DROP TABLE IF EXISTS {}".format(tbl_name)
+        self.cursor.execute(query)
+        self.connection.commit()
 
     def delete_hierarchy(self, root_class) -> None:
-        pass
+        """
+        Deletes root_class representation from database with all derived classes.
+
+        Drops class corresponding table and all derived classes corresponding tables.
+        :param root_class: Class which representation to be deleted with all derived classes
+        :return: None
+        """
+        # consider foreign key constaints! todo
+        self.delete_class(root_class)
+        subclasses = root_class.__subclasses__()
+        if len(subclasses) == 0:
+            return
+        for c in subclasses:
+            self.delete_hierarchy(c)
 
 if __name__ == '__main__':
     database_filepath = 'example.db'
@@ -536,6 +554,6 @@ if __name__ == '__main__':
     # py2sql.save_class(C)
     # py2sql.save_class(B)
     # py2sql.save_class(tuple)
-    py2sql.save_hierarchy(E)
-
+    # py2sql.save_hierarchy(E)
+    # py2sql.delete_hierarchy(E)
     py2sql.db_disconnect()
