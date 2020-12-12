@@ -280,7 +280,7 @@ class Py2SQL:
             return 'TEXT', col_name
 
     @staticmethod
-    def __get_column_name(cls, attr_name=""):
+    def __get_column_name(cls, attr_name="") -> str:
         if attr_name == "":
             return cls.__name__
         else:
@@ -330,6 +330,18 @@ class Py2SQL:
                 query = '''CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT)'''\
                     .format(table_name, PY2SQL_COLUMN_ID_NAME)
                 self.cursor.execute(query)
+            else:
+                # todo ? add all columns?
+                cols_query = ""
+                for df in data_fields:
+                    col_name = Py2SQL.__get_column_name(None, df)
+                    col_type, _ = Py2SQL.__sqlite_column_from_primitive(type(getattr(cls, df)))
+                    cols_query = col_name + " " + col_type + ", "
+                cols_query = cols_query[:-2]
+                query = '''CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT, ''' + cols_query + ")"
+                print(query)
+                query_ex = query.format(table_name, PY2SQL_COLUMN_ID_NAME)
+                self.cursor.execute(query_ex)
 
         self.connection.commit()
 
@@ -423,9 +435,12 @@ class Py2SQL:
                 continue
             else:
                 data_fields = Py2SQL.__get_data_fields_names(base_class)
+                print(base_class.__name__ + " " + str(data_fields))
                 for df_name in data_fields:
-                    attribute = getattr(cls, df_name)
-                    if Py2SQL.__is_primitive_type(type(attribute)):
+                    attribute = getattr(cls, df_name) # getting value!
+                    attribute_type = type(attribute)
+                    print(attribute_type)
+                    if Py2SQL.__is_primitive_type(attribute_type):
                         self.__create_or_update_col(tbl_name, cls, df_name, attribute)
                     else:
                         parent_table_name = self.save_class(getattr(cls, df_name).__class__)
@@ -507,5 +522,7 @@ if __name__ == '__main__':
     #
     # py2sql._Py2SQL__create_or_update_table(int)
     py2sql.save_class(C)
+    # py2sql.save_class(B)
+    # py2sql.save_class(tuple)
 
     py2sql.db_disconnect()
