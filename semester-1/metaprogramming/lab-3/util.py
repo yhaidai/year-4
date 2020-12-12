@@ -6,8 +6,28 @@ PY2SQL_ID_NAME = '___id'
 PY2SQL_COLUMN_STUB_NAME = '___stub'
 PY2SQL_COLUMN_STUB_TYPE = 'TEXT'
 
+PY2SQL_CLASS_ATTR_PREFIX = 'CLASS_ATTR'
+PY2SQL_OBJECT_ATTR_PREFIX = 'OBJECT_ATTR'
+PY2SQL_BASE_CLASS_REFERENCE_PREFIX = 'BASE_REF'
+PY2SQL_ASSOCIATION_REFERENCE_PREFIX = 'ASSOCIATION_REF'
+PY2SQL_SEPARATOR = '$'
+
+PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME = 'value'
 PY2SQL_COLUMN_ID_TYPE = "INTEGER"
-PY2SQL_COLUMN_ID_NAME = "___id"
+PY2SQL_COLUMN_ID_NAME = "ID"
+
+
+def get_pk_attr(obj, suffix=''):
+    pk_column_name = PY2SQL_ID_NAME + suffix
+    if not suffix:
+        counter = 0
+    else:
+        counter = int(suffix)
+
+    if hasattr(obj, pk_column_name):
+        return get_pk_attr(obj, suffix=str(counter + 1))
+
+    return PY2SQL_COLUMN_ID_NAME
 
 
 def model_py2sql(c):

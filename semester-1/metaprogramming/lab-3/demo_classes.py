@@ -1,7 +1,7 @@
 from array import array
 
 
-class AggregatedClass:
+class AssociatedClass:
     str_aggr_class_attr = 'aggregated class str'
 
     def __init__(self):
@@ -27,7 +27,7 @@ class SampleClass(SampleSuperClass):
             self.list_object_attr = [1, '2']
         self.dict_object_attr = {1: 'int', '2': 'str', 3.88: 'float'}
         self.array_object_attr = array('i', [1, 2, 3])
-        self.aggregated_object_attr = AggregatedClass()
+        self.aggregated_object_attr = AssociatedClass()
 
 
 class A:
@@ -60,4 +60,4 @@ class H(J):
 
 
 if __name__ == '__main__':
-    print(F.__dict__)
+    pass

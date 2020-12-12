@@ -22,94 +22,6 @@ class Py2SQL:
         self.connection = None
         self.cursor = None
 
-    @staticmethod
-    def __is_of_primitive_type(obj) -> bool:
-        """
-        Check whether given object is of primitive type i.e. is represented by a single field in SQLite database, thus
-        can be embedded into 'composite' objects
-
-        :param obj: object to be type-checked
-        :rtype: bool
-        :return: True if object is of primitive type, False otherwise
-        """
-        return type(obj) in (int, float, str, dict, tuple, list, set, frozenset)
-
-    @staticmethod
-    def __get_object_table_name(obj) -> str:
-        """
-        Build name of the table which should store objects of the same type as given one
-
-        :param obj: object to build respective table name from
-        :rtype: str
-        :return: name of table to store object in
-        """
-        return 'object_' + type(obj).__name__
-
-    @staticmethod
-    def __sqlite_type(obj) -> tuple:
-        """
-        Retrieve column names and types of SQLite table which should store objects of the same type as given one
-
-        int, float and str are represented as INTEGER, REAL and TEXT fields respectively
-        set, frozenset, list, tuple, dict collections are stored in TEXT field as comma separated list of their elements
-        array is represented as two TEXT fields: first containing its typecode and second containing its elements
-        object is represented as tuple of its attributes whereas each attribute of primitive type is stored as
-        described above meanwhile each composite attribute is represented by foreign key INTEGER field containing id of
-        the referenced object
-
-        :param obj: object to be stored in SQLite table
-        :rtype: tuple
-        :return: tuple of two lists containing column names and types respectively, list containing column types stores
-        two-element tuples of form (sqlite_type: str, foreign_key_reference: str) where foreign_key_reference being None
-        means absence of the reference while if some other table is to be referenced it should be equal to the name
-        of the respective table
-        """
-        if type(obj) == int:
-            columns = ['Value', ]
-            types = [('INTEGER', None), ]
-        elif type(obj) == float:
-            columns = ['Value', ]
-            types = [('REAL', None), ]
-        elif type(obj) == array:
-            columns = ['TypeCode', 'Value', ]
-            types = [('TEXT', None), ('TEXT', None), ]
-        elif type(obj) in (str, list, tuple, set, frozenset, dict):
-            columns = ['Value', ]
-            types = [('TEXT', None), ]
-        else:  # object
-            columns = [''.join(list(map(str.capitalize, attr.split('_')))) for attr in obj.__dict__]
-            types = [(Py2SQL.__sqlite_type(value)[1], None) if Py2SQL.__is_of_primitive_type(value)
-                     else ('INTEGER', Py2SQL.__get_object_table_name(value)) for value in obj.__dict__.values()]
-
-        return columns, types
-
-    @staticmethod
-    def __sqlite_repr(obj) -> tuple:
-        """
-        Retrieve SQLite representation of given object
-
-        int, float and str are represented as INTEGER, REAL and TEXT fields respectively
-        set, frozenset, list, tuple, dict collections are stored in TEXT field as comma separated list of their elements
-        array is represented as two TEXT fields: first containing its typecode and second containing its elements
-        object is represented as tuple of its attributes whereas each attribute of primitive type is stored as
-        described above meanwhile each composite attribute is represented by foreign key INTEGER field containing id of
-        the referenced object
-
-        :param obj: object to be represented in SQLite database
-        :rtype: tuple
-        :return: tuple of values(presumably object's attributes) to be stored in the respective database table
-        """
-        if type(obj) in (set, frozenset, list, tuple):
-            return (str(list(obj))[1:-1],)
-        elif type(obj) == dict:
-            return (str(obj)[1:-1],)
-        elif type(obj) == array:
-            return obj.typecode, str(list(obj))[1:-1]
-        elif type(obj) in (int, float, str):
-            return (obj,)
-        else:  # object
-            return tuple(obj.__dict__.values())
-
     def db_connect(self, db_filepath: str) -> None:
         """
         Connect to the database in given path
@@ -189,50 +101,64 @@ class Py2SQL:
 
     # Python -> SQLite
 
-    def save_object(self, obj) -> None:
+    def save_object(self, obj) -> int:
         """
         Save given object instance's representation into database or update it if it already exists
 
         :param obj: object instance to be saved
-        :return: None
+        :rtype: int
+        :return: id of object instance that was saved
         """
         table_name = Py2SQL.__get_object_table_name(obj)
-        columns, types = Py2SQL.__sqlite_type(obj)
-        id_column_name, id_column_type = 'ID', 'INTEGER'
-        try:
-            self.cursor.execute('''
-                                CREATE TABLE {} (
-                                {} {} PRIMARY KEY,
-                                {}
-                                );
-                                '''.format(table_name,
-                                           id_column_name,
-                                           id_column_type,
-                                           ','.join(
-                                               ['{} {} NOT NULL'.format(columns[i], types[i][0]) if types[i][1] is None
-                                                else '{} {} REFERENCES {}(ID)'.format(columns[i], *types[i])
-                                                for i in range(len(types))]))
-                                )
-        except sqlite3.OperationalError:  # table already exists
-            pass
-        columns.insert(0, id_column_name)
 
-        if hasattr(obj, '__dict__'):  # object
-            values = [id(obj)]
-            for value in obj.__dict__.values():
-                if not Py2SQL.__is_of_primitive_type(value):
-                    self.save_object(value)
-                    values.append(id(value))  # save foreign key for composite object
+        if not self.__table_exists(table_name):
+            self.save_class(type(obj))
+
+        if not Py2SQL.__is_of_primitive_type(obj):  # object
+            self.__add_object_attrs_columns(obj, table_name)
+
+            values = []
+            for attr_name, attr_value in obj.__dict__.items():
+                if not Py2SQL.__is_of_primitive_type(attr_value):
+                    contained_obj_id = self.save_object(attr_value)
+                    # save association reference for associated object
+                    values.append(Py2SQL.__get_association_reference(attr_value, contained_obj_id))
                 else:
-                    values.append(Py2SQL.__sqlite_repr(value)[0])
+                    values.append(Py2SQL.__sqlite_repr(attr_value)[0])
         else:
-            values = (id(obj), *Py2SQL.__sqlite_repr(obj))
+            values = Py2SQL.__sqlite_repr(obj)
 
-        self.cursor.execute('''
-        INSERT OR REPLACE INTO {} {}
-        VALUES ({});
-        '''.format(table_name, str(tuple(columns)), ('?,' * len(values))[:-1]), values)
+        columns = [column_name for _, column_name, _ in self.db_table_structure(table_name)
+                   if column_name.startswith(PY2SQL_OBJECT_ATTR_PREFIX) or
+                   column_name == PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME]
+
+        query = 'INSERT OR REPLACE INTO {}({}) VALUES ({});'.format(
+            table_name, str(columns)[1:-1],
+            ('?,' * len(values))[:-1]
+        )
+        print(query, values)
+
+        self.cursor.execute(query, values)
         self.connection.commit()
+
+        return self.cursor.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+    @staticmethod
+    def __get_object_column_name(attr_name: str):
+        return PY2SQL_OBJECT_ATTR_PREFIX + PY2SQL_SEPARATOR + attr_name
+
+    @staticmethod
+    def __get_class_column_name(attr_name: str):
+        return PY2SQL_CLASS_ATTR_PREFIX + PY2SQL_SEPARATOR + attr_name
+
+    @staticmethod
+    def __get_association_reference(obj, ref_id):
+        return PY2SQL_ASSOCIATION_REFERENCE_PREFIX + PY2SQL_SEPARATOR + Py2SQL.__get_object_table_name(obj) + \
+               PY2SQL_SEPARATOR + str(ref_id)
+
+    @staticmethod
+    def __get_base_class_table_reference_name(cls):
+        return PY2SQL_BASE_CLASS_REFERENCE_PREFIX + PY2SQL_SEPARATOR + Py2SQL.__get_class_table_name(cls)
 
     @staticmethod
     def __is_magic_attr(attr_name: str) -> bool:
@@ -243,6 +169,41 @@ class Py2SQL:
         :return: bool
         """
         return attr_name.startswith("__") and attr_name.endswith("__")
+
+    @staticmethod
+    def __sqlite_repr(obj) -> tuple:
+        """
+        Retrieve SQLite representation of given object
+
+        int, float and str are represented as INTEGER, REAL and TEXT fields respectively
+        set, frozenset, list, tuple, dict collections are stored in TEXT field as comma separated list of their elements
+        array is represented as two TEXT fields: first containing its typecode and second containing its elements
+        object is represented as tuple of its attributes whereas each attribute of primitive type is stored as
+        described above meanwhile each composite attribute is represented by foreign key INTEGER field containing id of
+        the referenced object
+
+        :param obj: object to be represented in SQLite database
+        :rtype: tuple
+        :return: tuple of values(presumably object's attributes) to be stored in the respective database table
+        """
+        if type(obj) == array:
+            return (obj.typecode + str(list(obj)),)
+        elif Py2SQL.__is_of_primitive_type(obj):
+            return (str(obj),)
+        else:  # object
+            return tuple(obj.__dict__.values())
+
+    @staticmethod
+    def __is_of_primitive_type(obj) -> bool:
+        """
+        Check whether given object is of primitive type i.e. is represented by a single field in SQLite database, thus
+        can be embedded into 'composite' objects
+
+        :param obj: object to be type-checked
+        :rtype: bool
+        :return: True if object is of primitive type, False otherwise
+        """
+        return Py2SQL.__is_primitive_type(type(obj))
 
     @staticmethod
     def __is_primitive_type(cls_obj):
@@ -262,6 +223,16 @@ class Py2SQL:
             return attr_name
 
     @staticmethod
+    def __get_object_table_name(obj) -> str:
+        """
+        Build name of the table which should store objects of the same type as given one
+        :param obj: object to build respective table name from
+        :rtype: str
+        :return: name of table to store object in
+        """
+        return Py2SQL.__get_class_table_name(type(obj))
+
+    @staticmethod
     def __get_class_table_name(cls_obj):
         """Defines database table name for class representation
 
@@ -272,10 +243,6 @@ class Py2SQL:
         if Py2SQL.__is_of_primitive_type(cls_obj):
             return prefix + cls_obj.__name__
         return prefix + cls_obj.__name__
-
-    @staticmethod
-    def __get_base_class_table_reference_name(cls):
-        return 'base_ref${}$'.format(Py2SQL.__get_class_table_name(cls))
 
     def __table_exists(self, table_name):
         """
@@ -289,6 +256,18 @@ class Py2SQL:
                 return True
         return False
 
+    def __add_object_attrs_columns(self, obj, table_name):
+        for attr_name in obj.__dict__:
+            try:
+                self.cursor.execute(
+                    'ALTER TABLE {} ADD COLUMN {} TEXT'.format(
+                        table_name,
+                        Py2SQL.__get_object_column_name(attr_name)
+                    )
+                )
+            except sqlite3.OperationalError:  # column already exists
+                pass
+
     def __create_or_update_table(self, cls):
         """
         Consider cls as primitive type or as class with primitive attributes
@@ -296,20 +275,23 @@ class Py2SQL:
         :return: table name, id column name
         """
         table_name = self.__get_class_table_name(cls)
-
         data_fields = Py2SQL.__get_data_fields_names(cls)
+
         fk_columns_query = ','.join(
             ['{} REFERENCES {}(ID)'.format(
                 Py2SQL.__get_base_class_table_reference_name(b),
                 Py2SQL.__get_class_table_name(b)) for b in cls.__bases__ if b != object] +
-            ['{} TEXT'.format(df) for df in data_fields]
+            ['{} TEXT'.format(Py2SQL.__get_class_column_name(df)) for df in data_fields]
         )
-
         if fk_columns_query:
             fk_columns_query = ', ' + fk_columns_query
 
         query = 'CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT {})' \
             .format(table_name, PY2SQL_COLUMN_ID_NAME, fk_columns_query)
+
+        if self.__is_primitive_type(cls):
+            query = 'CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT, {} TEXT)' \
+                .format(table_name, PY2SQL_COLUMN_ID_NAME, PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME)
 
         print(query)
         self.cursor.execute(query)
@@ -333,16 +315,6 @@ class Py2SQL:
                 data_attr_names.append(k)
 
         return data_attr_names
-
-    @staticmethod
-    def __get_foreign_key_name(attribute_name, reference_on_table_name) -> str:
-        """
-
-        :param attribute_name: class attribute name keeping not primitive attribute
-        :param reference_on_table_name: table name for foreign key to reference on
-        :return:
-        """
-        return "a_fk_" + attribute_name + "_" + reference_on_table_name
 
     def save_class(self, cls) -> 'class table name':
         """
@@ -436,25 +408,26 @@ if __name__ == '__main__':
     py2sql.db_connect(database_filepath)
     # showcase_table_name = 'object_int'
     #
-    # py2sql.save_object(1)
+    py2sql.save_object(1)
     #
     # f = 1.1
     # py2sql.save_object(f)
     # py2sql.delete_object(f)
-    # py2sql.save_object(2.2)
-    #
-    # py2sql.save_object('some str')
-    # py2sql.save_object([1, 2])
-    # py2sql.save_object((1, 2))
-    # py2sql.save_object({1, 2})
-    # py2sql.save_object(frozenset((1, 2)))
-    # py2sql.save_object({'key': 'str', 1: 'int', (1, 2, 3): 'tuple'})
-    #
-    # a = array('i', [1, 2])
-    # py2sql.save_object(a)
-    #
-    # sc = SampleClass(4)
-    # py2sql.save_object(sc)
+    py2sql.save_object(2.2)
+
+    py2sql.save_object('some str')
+    py2sql.save_object([1, 2])
+    py2sql.save_object((1, 2))
+    py2sql.save_object({1, 2})
+    py2sql.save_object(frozenset((1, 2)))
+    py2sql.save_object({'key': 'str', 1: 'int', (1, 2, 3): 'tuple'})
+
+    a = array('i', [1, 2])
+    py2sql.save_object(a)
+
+    sc = SampleClass(4)
+    py2sql.save_object(sc)
+    py2sql.save_object(sc)
     # py2sql.delete_object(sc)
     # py2sql.save_object(SampleClass())
     #
@@ -469,6 +442,6 @@ if __name__ == '__main__':
     py2sql.save_class(B)
     py2sql.save_class(F)
     # py2sql.save_class(tuple)
-    # py2sql.save_hierarchy(E)
+    # py2sql.save_hierarchy(A)
     # py2sql.delete_hierarchy(E)
     py2sql.db_disconnect()
