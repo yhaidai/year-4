@@ -12,7 +12,6 @@ from array import array
 from inspect import *
 
 from util import *
-from demo_classes import SampleClass, AssociatedClass
 from demo_classes import *
 
 
@@ -170,7 +169,9 @@ class Py2SQL:
         return PY2SQL_OBJECT_ATTR_PREFIX + PY2SQL_SEPARATOR + attr_name
 
     @staticmethod
-    def __get_class_column_name(attr_name: str):
+    def __get_class_column_name(attr_name: str, attr_value):
+        if isfunction(attr_value):
+            return PY2SQL_CLASS_METHOD_PREFIX + PY2SQL_SEPARATOR + attr_name
         return PY2SQL_CLASS_ATTR_PREFIX + PY2SQL_SEPARATOR + attr_name
 
     @staticmethod
@@ -192,7 +193,7 @@ class Py2SQL:
         """
         return attr_name.startswith("__") and attr_name.endswith("__")
 
-    def __get_sqlite_repr(self, obj) -> str:
+    def __get_sqlite_repr(self, obj) -> str or None:
         """
         Retrieve SQLite representation of given object
 
@@ -204,9 +205,11 @@ class Py2SQL:
         the referenced object
 
         :param obj: object to be represented in SQLite database
-        :rtype: str
+        :rtype: str or None
         :return: sqlite representation of an object to be stored in the respective database table
         """
+        if obj is None:
+            return None
         if type(obj) == array:
             return '{}("{}", {})'.format(type(obj).__name__, obj.typecode, list(obj))
         if type(obj) == frozenset:
@@ -215,6 +218,8 @@ class Py2SQL:
             return '{}("{}")'.format(type(obj).__name__, obj)
         elif Py2SQL.__is_of_primitive_type(obj):
             return '{}({})'.format(type(obj).__name__, obj)
+        elif isfunction(obj):
+            return getsource(obj).replace("'", '"')
         else:  # object
             return Py2SQL.__get_association_reference(obj, self.save_object(obj))
 
@@ -239,13 +244,6 @@ class Py2SQL:
         """
 
         return cls_obj in (int, float, str, dict, tuple, list, set, frozenset, array)
-
-    @staticmethod
-    def __get_column_name(cls, attr_name="") -> str:
-        if attr_name == "":
-            return cls.__name__
-        else:
-            return attr_name
 
     @staticmethod
     def __get_object_table_name(obj) -> str:
@@ -302,8 +300,8 @@ class Py2SQL:
         :param cls_obj:
         :return: list(str, str,...)
         """
-        return [(k, v) for k, v in cls_obj.__dict__.items() if not Py2SQL.__is_magic_attr(k) and
-                not isfunction(getattr(cls_obj, k)) and PY2SQL_ID_NAME != k]
+        return [(k, v) for k, v in cls_obj.__dict__.items() if (not Py2SQL.__is_magic_attr(k) or isfunction(v)) and
+                PY2SQL_ID_NAME != k]
 
     def __table_is_empty(self, table_name):
         return self.cursor.execute('SELECT count(*) FROM {}'.format(table_name)).fetchone()[0] == 0
@@ -364,7 +362,7 @@ class Py2SQL:
             ) for b in cls.__bases__ if b != object]
 
             attr_columns = ['{} TEXT DEFAULT \'{}\''.format(
-                Py2SQL.__get_class_column_name(k),
+                Py2SQL.__get_class_column_name(k, v),
                 self.__get_sqlite_repr(v)
             ) for k, v in data_fields]
 
