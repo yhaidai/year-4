@@ -125,17 +125,21 @@ class Py2SQL:
 
         columns = self.__get_object_bound_columns(table_name)
 
-        existed_id = self.cursor.execute(
-            'SELECT {} from {} WHERE {} = ?'.format(
-                PY2SQL_COLUMN_ID_NAME, table_name, PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME
-            ),
-            (str(id(obj)),)
-        ).fetchone()
-        if existed_id:
-            return existed_id[0]
+        obj_pk = self.__get_pk_if_exists(obj)
+        if obj_pk:
+            query = 'UPDATE {} SET {} WHERE {} = ?'.format(
+                table_name,
+                ', '.join(['{} = ?'.format(c) for c in columns.split(', ')]),
+                PY2SQL_COLUMN_ID_NAME
+            )
+            params = (*values, obj_pk)
+            print(query, params)
+            self.cursor.execute(query, params)
+            return obj_pk
 
-        query = 'INSERT OR REPLACE INTO {}({}) VALUES ({});'.format(
-            table_name, columns,
+        query = 'INSERT INTO {}({}) VALUES ({});'.format(
+            table_name,
+            columns,
             ('?,' * len(values))[:-1]
         )
         print(query, values)
@@ -144,6 +148,19 @@ class Py2SQL:
         self.connection.commit()
 
         return self.__get_last_inserted_id()
+
+    def __get_pk_if_exists(self, obj):
+        table_name = Py2SQL.__get_object_table_name(obj)
+        existed_id = self.cursor.execute(
+            'SELECT {} FROM {} WHERE {} = ?'.format(
+                PY2SQL_COLUMN_ID_NAME, table_name, PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME
+            ),
+            (str(id(obj)),)
+        ).fetchone()
+
+        if existed_id:
+            return existed_id[0]
+        return None
 
     def __get_last_inserted_id(self):
         return self.cursor.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -191,9 +208,13 @@ class Py2SQL:
         :return: sqlite representation of an object to be stored in the respective database table
         """
         if type(obj) == array:
-            return obj.typecode + str(list(obj))
-        elif Py2SQL.__is_of_primitive_type(obj):
+            return '{}("{}", {})'.format(type(obj).__name__, obj.typecode, list(obj))
+        if type(obj) == frozenset:
             return str(obj)
+        if type(obj) == str:
+            return '{}("{}")'.format(type(obj).__name__, obj)
+        elif Py2SQL.__is_of_primitive_type(obj):
+            return '{}({})'.format(type(obj).__name__, obj)
         else:  # object
             return Py2SQL.__get_association_reference(obj, self.save_object(obj))
 
@@ -336,19 +357,24 @@ class Py2SQL:
         else:
             data_fields = Py2SQL.__get_data_fields(cls)
 
-            fk_columns_query = ','.join(
-                ['{} REFERENCES {}(ID) DEFAULT {}'.format(
-                    Py2SQL.__get_base_class_table_reference_name(b),
-                    Py2SQL.__get_class_table_name(b),
-                    PY2SQL_DEFAULT_CLASS_BOUND_ROW_ID
-                ) for b in cls.__bases__ if b != object] +
-                ['{} TEXT DEFAULT \'{}\''.format(Py2SQL.__get_class_column_name(k), self.__get_sqlite_repr(v)) for
-                 k, v in data_fields]
-            )
-            if fk_columns_query:
-                fk_columns_query = ', ' + fk_columns_query
+            base_ref_columns = ['{} REFERENCES {}(ID) DEFAULT {}'.format(
+                Py2SQL.__get_base_class_table_reference_name(b),
+                Py2SQL.__get_class_table_name(b),
+                PY2SQL_DEFAULT_CLASS_BOUND_ROW_ID
+            ) for b in cls.__bases__ if b != object]
 
-            query = query_start + ' ' + fk_columns_query + ')'
+            attr_columns = ['{} TEXT DEFAULT \'{}\''.format(
+                Py2SQL.__get_class_column_name(k),
+                self.__get_sqlite_repr(v)
+            ) for k, v in data_fields]
+
+            columns = base_ref_columns + attr_columns
+
+            columns_query = ', '.join(columns)
+            if columns_query:
+                columns_query = ', ' + columns_query
+
+            query = query_start + ' ' + columns_query + ')'
 
         print(query)
         self.cursor.execute(query)
@@ -468,7 +494,7 @@ if __name__ == '__main__':
 
     sc1 = SampleClass(4)
     py2sql.save_object(sc1)
-    sc1.new_attr = 5
+    sc1.new_attr = 'ASSOCIATION_REF$demo_classes_AssociatedClass$2'  # naming collision will never occur!
     py2sql.save_object(sc1)
     # py2sql.delete_object(sc)
     # py2sql.save_object(SampleClass())
@@ -486,7 +512,6 @@ if __name__ == '__main__':
     py2sql.save_class(B)
     B.new_attr = 33
     py2sql.save_class(B)
-    print(C.b.new_attr)
     py2sql.save_class(C)
     # py2sql.save_class(F)
     # py2sql.save_class(tuple)

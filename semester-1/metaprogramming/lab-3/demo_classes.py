@@ -5,7 +5,7 @@ class AssociatedClass:
     str_aggr_class_attr = 'aggregated class str'
 
     def __init__(self):
-        self.set_object_attr = ('aggregated', 'set', )
+        self.set_object_attr = {'aggregated', 'set', }
 
 
 class SampleSuperClass:
