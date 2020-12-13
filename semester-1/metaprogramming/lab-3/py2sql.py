@@ -97,8 +97,41 @@ class Py2SQL:
         """
         return list(map(lambda x: x[:3], self.cursor.execute('PRAGMA table_info(' + table_name + ');').fetchall()))
 
-    def db_table_size(self, table_name: str):
-        pass
+    def db_table_size(self, table_name: str) -> float:
+        """
+        Dynamically calculates data size stored in the table with table name provided in Mb.
+
+        :table_name: table name to get size of
+        :rtype: float
+        :return: size of table ib Mb
+        """
+        if not type(table_name) == str:
+            raise ValueError("str type expected as table_name. Got " + str(type(table_name)))
+        q = "SELECT * FROM {}".format(table_name)
+        try:
+            self.cursor.execute(q)
+        except Exception:
+            raise Exception('No table' + table_name + ' found')
+        rows = self.cursor.fetchall()
+
+        col_names = list(map(lambda descr_tuple: descr_tuple[0], self.cursor.description))
+        int_size = 8
+        text_charsize = 2
+        bytes_size = 0
+        for r in rows:
+            for i in range(len(r)):
+                if r[i] is None:
+                    continue
+                elif (col_names[i] == PY2SQL_COLUMN_ID_NAME) or (col_names[i] == PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME):
+                    bytes_size += int_size
+                elif type(r[i]) == int:
+                    bytes_size += int_size
+                elif type(r[i]) == str:
+                    bytes_size += len(r[i]) * text_charsize
+                else:
+                    continue
+
+        return float(bytes_size / 1024 / 1024)
 
     # Python -> SQLite
 
@@ -605,23 +638,24 @@ class Py2SQL:
             return my_id
         globals()['id'] = id
 
-    def __reset_id_function(self):
+    def __reset_id_function(self) -> None:
         """
         Sets global module attribute 'id' to built-in python id() function
         Use carefully. Reflection used.
         """
         globals()['id'] = builtins.id
 
-    def __redefine_pyid_col_name(self):
+    def __redefine_pyid_col_name(self) -> None:
         """
         Replaces some constant values from util module.
+        To cancel effect of func call use __reset_pyid_col_name
 
         Use carefully. Reflection used.
         """
         global PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME
         PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME = str(PY2SQL_COLUMN_ID_NAME)
 
-    def __reset_pyid_col_name(self):
+    def __reset_pyid_col_name(self) -> None:
         """
         Cancels the effect of __redefine_pyid_col_name method.
 
@@ -630,10 +664,12 @@ class Py2SQL:
         global PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME
         PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME = getattr(sys.modules['util'], 'PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME')
 
-    def save_object_with_update(self, obj) -> None:
+    def save_object_with_update(self, obj):
         """
         Inserts or updates obj related data by ID provided.
-        obj expected to be ModelPy2SQL instance object
+
+        Obj expected to be ModelPy2SQL instance object
+        If not - object will be inserted or updated as provided
 
         :param obj: object to be saved or updated in db
         :return: object of type util.ModelPy2SQL
@@ -644,14 +680,13 @@ class Py2SQL:
             new_id = self.save_object(obj)
             w = ModelPy2SQL(obj, new_id)
         else:
-            # update by ID
             self.__redefine_id_function(obj.get_id())
             self.__redefine_pyid_col_name()
-
-            self.save_object(obj.obj)
-
+            new_id = self.save_object(obj.obj)
             self.__reset_pyid_col_name()
             self.__reset_id_function()
+            w = obj
+
         return w
 
 if __name__ == '__main__':
@@ -710,5 +745,7 @@ if __name__ == '__main__':
     # py2sql.save_class(tuple)
     # py2sql.save_hierarchy(A)
     # py2sql.delete_hierarchy(A)
+
+    print(py2sql.db_table_size('demo_classes$SampleClass'))
 
     py2sql.db_disconnect()
