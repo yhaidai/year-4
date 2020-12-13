@@ -10,6 +10,8 @@ import os
 import sqlite3
 from array import array
 from inspect import *
+import builtins
+import sys
 
 from util import *
 from demo_classes import *
@@ -304,6 +306,61 @@ class Py2SQL:
         return Py2SQL.__get_class_table_name(type(obj))
 
     @staticmethod
+    def __get_class_name_by_table_name(table_name: str) -> tuple:
+        """
+        Parses given table name to find out name of class this table was created for
+
+        :param table_name: table name of class to get name of
+        :return: tuple (<full_module_name>, <class_name>)
+        """
+        divider = '$'
+        ind = table_name.rfind(divider)
+        module = table_name[:ind].replace(divider, ".")
+        class_name = table_name[ind + 1:]
+
+        return module, class_name
+
+    @staticmethod
+    def __get_attribute_name(self, tbl_name, col_name) -> str:
+        """
+        DO NOT USE
+
+        :param tbl_name: table the column taken from
+        :param col_name: column name
+        :return:
+        """
+        cls = Py2SQL.__get_class_object_by_table_name(tbl_name)
+        attr_name = ""
+        if Py2SQL.__is_primitive_type(cls):
+            pass
+        else:
+            pass
+        # PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME
+        # PY2SQL_OBJECT_ATTR_PREFIX + PY2SQL_SEPARATOR
+        # todo
+        return attr_name
+
+    @staticmethod
+    def __get_class_object_by_table_name(tbl_name):
+        """
+        Returns class object of corresponding tbl name or raise an Exception
+
+        :param tbl_name: table name to get corresponding class object of
+        :return: class object
+        """
+        module_nm, cls_nm = Py2SQL._get_class_name_by_table_name(tbl_name)
+        cls_obj = None
+        try:
+            cls_obj = getattr(sys.modules[module_nm], cls_nm)
+        except (AttributeError, KeyError) as e:
+            msg = 'No such class: ' + module_nm + "." + cls_nm
+            raise Exception(msg)
+        except Exception:
+            raise Exception('Unpredictable error')
+
+        return cls_obj
+
+    @staticmethod
     def __get_class_table_name(cls) -> str:
         """
         Retrieve name of the database table used to represent given class
@@ -312,7 +369,7 @@ class Py2SQL:
         :rtype: str
         :return: name of the table that represents given class
         """
-        prefix = cls.__module__.replace(".", "_") + "_"
+        prefix = cls.__module__.replace(".", "$") + "$"
         if Py2SQL.__is_of_primitive_type(cls):
             return prefix + cls.__name__
         return prefix + cls.__name__
@@ -535,6 +592,67 @@ class Py2SQL:
         for c in subclasses:
             self.delete_hierarchy(c)
 
+    def __redefine_id_function(self, my_id):
+        """
+        Replace id() global function so that it returns my_id
+        To cancel effect of this func call __reset_id_function() method.
+
+        Use carefully. Reflection used.
+        :param my_id: value to be returned after id() call
+        :return: my_id
+        """
+        def id(ob):
+            return my_id
+        globals()['id'] = id
+
+    def __reset_id_function(self):
+        """
+        Sets global module attribute 'id' to built-in python id() function
+        Use carefully. Reflection used.
+        """
+        globals()['id'] = builtins.id
+
+    def __redefine_pyid_col_name(self):
+        """
+        Replaces some constant values from util module.
+
+        Use carefully. Reflection used.
+        """
+        global PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME
+        PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME = str(PY2SQL_COLUMN_ID_NAME)
+
+    def __reset_pyid_col_name(self):
+        """
+        Cancels the effect of __redefine_pyid_col_name method.
+
+        Use carefully. Reflection used.
+        """
+        global PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME
+        PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME = getattr(sys.modules['util'], 'PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME')
+
+    def save_object_with_update(self, obj) -> None:
+        """
+        Inserts or updates obj related data by ID provided.
+        obj expected to be ModelPy2SQL instance object
+
+        :param obj: object to be saved or updated in db
+        :return: object of type util.ModelPy2SQL
+        """
+
+        w = None
+        if type(obj) != ModelPy2SQL:
+            new_id = self.save_object(obj)
+            w = ModelPy2SQL(obj, new_id)
+        else:
+            # update by ID
+            self.__redefine_id_function(obj.get_id())
+            self.__redefine_pyid_col_name()
+
+            self.save_object(obj.obj)
+
+            self.__reset_pyid_col_name()
+            self.__reset_id_function()
+        return w
 
 if __name__ == '__main__':
     database_filepath = 'example.db'
@@ -565,7 +683,12 @@ if __name__ == '__main__':
     py2sql.save_object(sc1)
     sc1.new_attr = 'ASSOCIATION_REF$demo_classes_AssociatedClass$2'  # naming collision will never occur!
     py2sql.save_object(sc1)
-    py2sql.delete_object(sc1)
+
+    # crash code !
+    sc1.int_object_attr = 999
+    m = ModelPy2SQL(sc1, 2)
+    py2sql.save_object_with_update(m)
+    # py2sql.delete_object(sc1)
     # py2sql.save_object(SampleClass())
     #
     # print('Engine:', py2sql.db_engine())
@@ -587,4 +710,5 @@ if __name__ == '__main__':
     # py2sql.save_class(tuple)
     # py2sql.save_hierarchy(A)
     # py2sql.delete_hierarchy(A)
+
     py2sql.db_disconnect()

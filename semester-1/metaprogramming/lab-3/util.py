@@ -62,11 +62,18 @@ class ModelPy2SQL:
     """
     __id = int()
 
-    def __init__(self, obj):
+    def __init__(self, obj, id_=0):
         self.obj = obj
+        self.__id = id_
 
     def get_id(self):
         return self.__id
 
-    def set_id(self, id):
-        self.__id = id
+    def set_id(self, id_):
+        """
+        Setting id for object you want to update.
+
+        If in the corresponding table is no row with such ID, new row will be inserted,
+        else updated.
+        """
+        self.__id = id_
