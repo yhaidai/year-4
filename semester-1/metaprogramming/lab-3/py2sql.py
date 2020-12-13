@@ -12,16 +12,30 @@ from array import array
 from inspect import *
 import builtins
 import sys
+import logging
 
 from util import *
 from demo_classes import *
 
 
 class Py2SQL:
-    def __init__(self):
+    def __init__(self, logs_enabled=False, log_file=""):
         self.filename = None
         self.connection = None
         self.cursor = None
+
+    def __setup_logger(self, logs_enabled: bool, log_file: str):
+        """
+        Creates and returns logger.
+
+        :param logs_enabled: True to enable, False to disable
+        :param log_file: absolute path with file name of file for logging to
+        :return: logger instance from 'logging' module
+        """
+        logging.basicConfig(level=logging.DEBUG, filename=log_file, filemode="a")
+        logger = logging.getLogger("main_logger")
+        logger.addFilter(lambda r: bool(logs_enabled))
+        return logger
 
     def db_connect(self, db_filepath: str) -> None:
         """
@@ -167,7 +181,7 @@ class Py2SQL:
                 PY2SQL_COLUMN_ID_NAME
             )
             params = (*values, obj_pk)
-            print(query, params)
+            # print(query, params)
             self.cursor.execute(query, params)
             return obj_pk
 
@@ -176,7 +190,7 @@ class Py2SQL:
             columns,
             ('?,' * len(values))[:-1]
         )
-        print(query, values)
+        # print(query, values)
 
         self.cursor.execute(query, values)
         self.connection.commit()
@@ -536,7 +550,7 @@ class Py2SQL:
 
             query = query_start + ' ' + columns_query + ')'
 
-        print(query)
+        # print(query)
         self.cursor.execute(query)
 
         if not self.__is_primitive_type(cls):
@@ -693,7 +707,9 @@ if __name__ == '__main__':
     database_filepath = 'example.db'
     os.remove(database_filepath)
 
-    py2sql = Py2SQL()
+    logfile = "logs.txt"
+    py2sql = Py2SQL(True, logfile)
+
     py2sql.db_connect(database_filepath)
     # showcase_table_name = 'object_int'
 
