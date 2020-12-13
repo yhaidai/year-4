@@ -682,7 +682,8 @@ class Py2SQL:
         """
         Inserts or updates obj related data by ID provided.
 
-        Obj expected to be ModelPy2SQL instance object
+        Obj expected to be ModelPy2SQL instance object.
+        If so, row is updated if provided ID exists, and fails otherwise.
         If not - object will be inserted or updated as provided
 
         :param obj: object to be saved or updated in db
@@ -694,14 +695,26 @@ class Py2SQL:
             new_id = self.save_object(obj)
             w = ModelPy2SQL(obj, new_id)
         else:
+            tbl_nm = Py2SQL.__get_object_table_name(obj.obj)
+            q = "SELECT * FROM {} WHERE {}={}"\
+                .format(tbl_nm, PY2SQL_COLUMN_ID_NAME, obj.get_id())
+            self.cursor.execute(q)
+            rows = self.cursor.fetchall()
+            if len(rows) == 0:
+                mes = "No " + str(obj.obj.__class__.__name__) + " instance objects in " + tbl_nm + " with id: " + str(obj.get_id())
+                raise Exception(mes)
+
             self.__redefine_id_function(obj.get_id())
             self.__redefine_pyid_col_name()
-            new_id = self.save_object(obj.obj)
+            self.save_object(obj.obj)
             self.__reset_pyid_col_name()
             self.__reset_id_function()
             w = obj
 
         return w
+
+    def get_object_by_id(self, table_name, id):
+        pass
 
 if __name__ == '__main__':
     database_filepath = 'example.db'
