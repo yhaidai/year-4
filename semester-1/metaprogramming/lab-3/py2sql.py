@@ -102,7 +102,7 @@ class Py2SQL:
 
     def save_object(self, obj) -> int:
         """
-        Save given object instance's representation into database or update it if it already exists
+        Save representation of given object instance into database or update it if it already exists
 
         :param obj: object instance to be saved
         :rtype: int
@@ -149,6 +149,13 @@ class Py2SQL:
         return self.__get_last_inserted_id()
 
     def __get_pk_if_exists(self, obj):
+        """
+        Retrieve primary key of given object from corresponding table
+
+        :param obj: obj to get primary key of if it exists in corresponding table
+        :rtype: int or None
+        :return: primary key of object if it is in the table, otherwise None
+        """
         table_name = Py2SQL.__get_object_table_name(obj)
         existed_id = self.cursor.execute(
             'SELECT {} FROM {} WHERE {} = ?'.format(
@@ -162,25 +169,64 @@ class Py2SQL:
         return None
 
     def __get_last_inserted_id(self):
+        """
+        Retrieve last id inserted into the database
+
+        :rtype: int
+        :return: last id inserted into the database
+        """
         return self.cursor.execute('SELECT last_insert_rowid()').fetchone()[0]
 
     @staticmethod
     def __get_object_column_name(attr_name: str):
+        """
+        Retrieve name of the column responsible for storing given object instance attribute
+
+        :type attr_name: str
+        :param attr_name: name of the object instance attribute to get the column name
+        :return: name of the column responsible for storing given attribute
+        """
         return PY2SQL_OBJECT_ATTR_PREFIX + PY2SQL_SEPARATOR + attr_name
 
     @staticmethod
-    def __get_class_column_name(attr_name: str, attr_value):
+    def __get_class_column_name(attr_name: str, attr_value) -> str:
+        """
+        Retrieve name of the column responsible for storing given class instance attribute
+
+        :type attr_name: str
+        :param attr_name: name of the class instance attribute to get the column name
+        :param attr_value: value of the  class instance attribute to get the column name
+        :rtype: str
+        :return: name of the column responsible for storing given attribute
+        """
         if isfunction(attr_value):
             return PY2SQL_CLASS_METHOD_PREFIX + PY2SQL_SEPARATOR + attr_name
         return PY2SQL_CLASS_ATTR_PREFIX + PY2SQL_SEPARATOR + attr_name
 
     @staticmethod
     def __get_association_reference(obj, ref_id):
+        """
+        Retrieve association reference string for a given object instance and its primary key i.e. a string
+        that represents association relationship between two objects
+
+        :param obj: object instance to get the association reference for
+        :param ref_id: primary key of object instance to be referenced in the corresponding table
+        :rtype: str
+        :return: association reference string
+        """
         return PY2SQL_ASSOCIATION_REFERENCE_PREFIX + PY2SQL_SEPARATOR + Py2SQL.__get_object_table_name(obj) + \
                PY2SQL_SEPARATOR + str(ref_id)
 
     @staticmethod
-    def __get_base_class_table_reference_name(cls):
+    def __get_base_class_table_reference_name(cls) -> str:
+        """
+        Retrieve base class reference string for a given class instance i.e. a string
+        that represents inheritance relationship between two classes
+
+        :param cls: class instance to get base class table reference for
+        :rtype: str
+        :return: base class table reference string
+        """
         return PY2SQL_BASE_CLASS_REFERENCE_PREFIX + PY2SQL_SEPARATOR + Py2SQL.__get_class_table_name(cls)
 
     @staticmethod
@@ -197,12 +243,11 @@ class Py2SQL:
         """
         Retrieve SQLite representation of given object
 
-        int, float and str are represented as INTEGER, REAL and TEXT fields respectively
-        set, frozenset, list, tuple, dict collections are stored in TEXT field as comma separated list of their elements
-        array is represented as two TEXT fields: first containing its typecode and second containing its elements
-        object is represented as tuple of its attributes whereas each attribute of primitive type is stored as
-        described above meanwhile each composite attribute is represented by foreign key INTEGER field containing id of
-        the referenced object
+        All primitives are represented by respective type copy constructor call string with the actual value passed,
+        so that object instances of primitive types can be easily recreated from the database via eval() function
+
+        Composite objects are represented by association reference strings, whereas functions are represented with
+        their source code
 
         :param obj: object to be represented in SQLite database
         :rtype: str or None
@@ -229,26 +274,29 @@ class Py2SQL:
         Check whether given object is of primitive type i.e. is represented by a single field in SQLite database, thus
         can be embedded into 'composite' objects
 
-        :param obj: object to be type-checked
+        :param obj: object instance to be type-checked
         :rtype: bool
         :return: True if object is of primitive type, False otherwise
         """
         return Py2SQL.__is_primitive_type(type(obj))
 
     @staticmethod
-    def __is_primitive_type(cls_obj):
+    def __is_primitive_type(cls):
         """
         Checks if input class object belongs to primitive built-in types
-        :param cls_obj:
-        :return: bool
+
+        :param cls: class instance to check
+        :rtype: bool
+        :return: True if class is primitive type, False otherwise
         """
 
-        return cls_obj in (int, float, str, dict, tuple, list, set, frozenset, array)
+        return cls in (int, float, str, dict, tuple, list, set, frozenset, array)
 
     @staticmethod
     def __get_object_table_name(obj) -> str:
         """
-        Build name of the table which should store objects of the same type as given one
+        Retrieve name of the table which should store objects of the same type as given one
+
         :param obj: object to build respective table name from
         :rtype: str
         :return: name of table to store object in
@@ -256,30 +304,39 @@ class Py2SQL:
         return Py2SQL.__get_class_table_name(type(obj))
 
     @staticmethod
-    def __get_class_table_name(cls_obj):
-        """Defines database table name for class representation
-
-            :return str
+    def __get_class_table_name(cls) -> str:
         """
+        Retrieve name of the database table used to represent given class
 
-        prefix = cls_obj.__module__.replace(".", "_") + "_"
-        if Py2SQL.__is_of_primitive_type(cls_obj):
-            return prefix + cls_obj.__name__
-        return prefix + cls_obj.__name__
+        :param cls: class instance to get table name for
+        :rtype: str
+        :return: name of the table that represents given class
+        """
+        prefix = cls.__module__.replace(".", "_") + "_"
+        if Py2SQL.__is_of_primitive_type(cls):
+            return prefix + cls.__name__
+        return prefix + cls.__name__
 
     def __table_exists(self, table_name):
         """
-        Checks if table with table name exists in database
+        Check if table with table name exists in database
+
         :param table_name: table name
         :return: bool, exists or not
         """
-
         for tbl_name in self.db_tables():
             if tbl_name == table_name:
                 return True
         return False
 
     def __add_object_attrs_columns(self, obj, table_name):
+        """
+        Add columns representing attributes of given object instance to the table with given name
+
+        :param obj: object to add attributes of to the table
+        :param table_name: name of the table to add columns into
+        :return: None
+        """
         for attr_name in obj.__dict__:
             try:
                 self.cursor.execute(
@@ -298,15 +355,28 @@ class Py2SQL:
 
         Not includes magic attributes and functions (methods)
         :param cls_obj:
-        :return: list(str, str,...)
+        :return: list of two-element tuples containing data field name and value respectively
         """
         return [(k, v) for k, v in cls_obj.__dict__.items() if (not Py2SQL.__is_magic_attr(k) or isfunction(v)) and
                 PY2SQL_ID_NAME != k]
 
-    def __table_is_empty(self, table_name):
+    def __table_is_empty(self, table_name) -> bool:
+        """
+        Check if table is empty
+
+        :param table_name: name of the table to check
+        :rtype: bool
+        :return: True if table is empty, False otherwise
+        """
         return self.cursor.execute('SELECT count(*) FROM {}'.format(table_name)).fetchone()[0] == 0
 
-    def __get_object_bound_columns(self, table_name):
+    def __get_object_bound_columns(self, table_name) -> str:
+        """
+
+        :param table_name: name of the table to get columns bound to object instances from
+        :rtype: str
+        :return: comma separated list of column names
+        """
         columns = ', '.join([column_name for _, column_name, _ in self.db_table_structure(table_name)
                              if column_name.startswith(PY2SQL_OBJECT_ATTR_PREFIX) or
                              column_name == PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME or
@@ -336,11 +406,13 @@ class Py2SQL:
 
         self.cursor.execute('DROP TABLE {}$backup;'.format(table_name))
 
-    def __create_table(self, cls):
+    def __create_table(self, cls) -> str:
         """
-        Consider cls as primitive type or as class with primitive attributes
-        :param cls: primitive type (int, str, ...,) or class with primitive attributes
-        :return: table name, id column name
+        Create SQLite table representation for given class instance
+
+        :param cls: class instance to create SQLite table representation for
+        :rtype: str
+        :return: name of the table created
         """
         table_name = self.__get_class_table_name(cls)
         query_start = 'CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT, {} {}' \
@@ -423,9 +495,8 @@ class Py2SQL:
         """
         table_name = Py2SQL.__get_object_table_name(obj)
         self.cursor.execute(
-            'DELETE FROM {} WHERE {} = {};'.format(table_name, PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME, id(obj)))
-        if self.__table_is_empty(table_name):
-            self.cursor.execute('DROP TABLE {}'.format(table_name))
+            'DELETE FROM {} WHERE {} = ?;'.format(table_name, PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME), (id(obj),)
+        )
 
         if not Py2SQL.__is_of_primitive_type(obj):  # object
             for value in obj.__dict__.values():
@@ -494,7 +565,7 @@ if __name__ == '__main__':
     py2sql.save_object(sc1)
     sc1.new_attr = 'ASSOCIATION_REF$demo_classes_AssociatedClass$2'  # naming collision will never occur!
     py2sql.save_object(sc1)
-    # py2sql.delete_object(sc)
+    py2sql.delete_object(sc1)
     # py2sql.save_object(SampleClass())
     #
     # print('Engine:', py2sql.db_engine())
@@ -511,8 +582,9 @@ if __name__ == '__main__':
     B.new_attr = 33
     py2sql.save_class(B)
     py2sql.save_class(C)
+    # py2sql.delete_class(C)
     # py2sql.save_class(F)
     # py2sql.save_class(tuple)
-    py2sql.save_hierarchy(A)
-    py2sql.delete_hierarchy(A)
+    # py2sql.save_hierarchy(A)
+    # py2sql.delete_hierarchy(A)
     py2sql.db_disconnect()
