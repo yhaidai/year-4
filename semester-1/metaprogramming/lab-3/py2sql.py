@@ -12,7 +12,7 @@ from array import array
 from inspect import *
 
 from util import *
-from demo_classes import SampleClass
+from demo_classes import SampleClass, AssociatedClass
 from demo_classes import *
 
 
@@ -117,23 +117,25 @@ class Py2SQL:
         if not Py2SQL.__is_of_primitive_type(obj):  # object
             self.__add_object_attrs_columns(obj, table_name)
 
-            values = []
-            for attr_name, attr_value in obj.__dict__.items():
-                if not Py2SQL.__is_of_primitive_type(attr_value):
-                    contained_obj_id = self.save_object(attr_value)
-                    # save association reference for associated object
-                    values.append(Py2SQL.__get_association_reference(attr_value, contained_obj_id))
-                else:
-                    values.append(Py2SQL.__sqlite_repr(attr_value)[0])
+            values = [id(obj)]
+            for attr_value in obj.__dict__.values():
+                values.append(self.__get_sqlite_repr(attr_value))
         else:
-            values = Py2SQL.__sqlite_repr(obj)
+            values = (id(obj), self.__get_sqlite_repr(obj))
 
-        columns = [column_name for _, column_name, _ in self.db_table_structure(table_name)
-                   if column_name.startswith(PY2SQL_OBJECT_ATTR_PREFIX) or
-                   column_name == PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME]
+        columns = self.__get_object_bound_columns(table_name)
+
+        existed_id = self.cursor.execute(
+            'SELECT {} from {} WHERE {} = ?'.format(
+                PY2SQL_COLUMN_ID_NAME, table_name, PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME
+            ),
+            (str(id(obj)),)
+        ).fetchone()
+        if existed_id:
+            return existed_id[0]
 
         query = 'INSERT OR REPLACE INTO {}({}) VALUES ({});'.format(
-            table_name, str(columns)[1:-1],
+            table_name, columns,
             ('?,' * len(values))[:-1]
         )
         print(query, values)
@@ -141,6 +143,9 @@ class Py2SQL:
         self.cursor.execute(query, values)
         self.connection.commit()
 
+        return self.__get_last_inserted_id()
+
+    def __get_last_inserted_id(self):
         return self.cursor.execute('SELECT last_insert_rowid()').fetchone()[0]
 
     @staticmethod
@@ -170,8 +175,7 @@ class Py2SQL:
         """
         return attr_name.startswith("__") and attr_name.endswith("__")
 
-    @staticmethod
-    def __sqlite_repr(obj) -> tuple:
+    def __get_sqlite_repr(self, obj) -> str:
         """
         Retrieve SQLite representation of given object
 
@@ -183,15 +187,15 @@ class Py2SQL:
         the referenced object
 
         :param obj: object to be represented in SQLite database
-        :rtype: tuple
-        :return: tuple of values(presumably object's attributes) to be stored in the respective database table
+        :rtype: str
+        :return: sqlite representation of an object to be stored in the respective database table
         """
         if type(obj) == array:
-            return (obj.typecode + str(list(obj)),)
+            return obj.typecode + str(list(obj))
         elif Py2SQL.__is_of_primitive_type(obj):
-            return (str(obj),)
+            return str(obj)
         else:  # object
-            return tuple(obj.__dict__.values())
+            return Py2SQL.__get_association_reference(obj, self.save_object(obj))
 
     @staticmethod
     def __is_of_primitive_type(obj) -> bool:
@@ -268,39 +272,8 @@ class Py2SQL:
             except sqlite3.OperationalError:  # column already exists
                 pass
 
-    def __create_or_update_table(self, cls):
-        """
-        Consider cls as primitive type or as class with primitive attributes
-        :param cls: primitive type (int, str, ...,) or class with primitive attributes
-        :return: table name, id column name
-        """
-        table_name = self.__get_class_table_name(cls)
-        data_fields = Py2SQL.__get_data_fields_names(cls)
-
-        fk_columns_query = ','.join(
-            ['{} REFERENCES {}(ID)'.format(
-                Py2SQL.__get_base_class_table_reference_name(b),
-                Py2SQL.__get_class_table_name(b)) for b in cls.__bases__ if b != object] +
-            ['{} TEXT'.format(Py2SQL.__get_class_column_name(df)) for df in data_fields]
-        )
-        if fk_columns_query:
-            fk_columns_query = ', ' + fk_columns_query
-
-        query = 'CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT {})' \
-            .format(table_name, PY2SQL_COLUMN_ID_NAME, fk_columns_query)
-
-        if self.__is_primitive_type(cls):
-            query = 'CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT, {} TEXT)' \
-                .format(table_name, PY2SQL_COLUMN_ID_NAME, PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME)
-
-        print(query)
-        self.cursor.execute(query)
-        self.connection.commit()
-
-        return table_name, PY2SQL_COLUMN_ID_NAME
-
     @staticmethod
-    def __get_data_fields_names(cls_obj):
+    def __get_data_fields(cls_obj):
         """
         Retrieves from class object data field names.
 
@@ -308,33 +281,100 @@ class Py2SQL:
         :param cls_obj:
         :return: list(str, str,...)
         """
-        data_attr_names = list()
-        for k in cls_obj.__dict__.keys():
-            if not Py2SQL.__is_magic_attr(k) and not isfunction(getattr(cls_obj, k)) \
-                    and PY2SQL_ID_NAME != k:
-                data_attr_names.append(k)
+        return [(k, v) for k, v in cls_obj.__dict__.items() if not Py2SQL.__is_magic_attr(k) and
+                not isfunction(getattr(cls_obj, k)) and PY2SQL_ID_NAME != k]
 
-        return data_attr_names
+    def __table_is_empty(self, table_name):
+        return self.cursor.execute('SELECT count(*) FROM {}'.format(table_name)).fetchone()[0] == 0
 
-    def save_class(self, cls) -> 'class table name':
+    def __get_object_bound_columns(self, table_name):
+        columns = ', '.join([column_name for _, column_name, _ in self.db_table_structure(table_name)
+                             if column_name.startswith(PY2SQL_OBJECT_ATTR_PREFIX) or
+                             column_name == PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME or
+                             column_name == PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME])
+        return columns
+
+    def __update_table(self, cls):
+        """
+        Updates table of class cls
+
+        :param cls:
+        :return: None
+        """
+        table_name = Py2SQL.__get_class_table_name(cls)
+        columns = self.__get_object_bound_columns(table_name)
+
+        self.cursor.execute('ALTER TABLE {} RENAME TO {}$backup;'.format(table_name, table_name))
+        self.__create_table(cls)
+        self.cursor.execute('INSERT INTO {}({}) SELECT {} FROM {}$backup WHERE {} <> {};'.format(
+            table_name,
+            columns,
+            columns,
+            table_name,
+            PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME,
+            PY2SQL_DEFAULT_CLASS_BOUND_ROW_ID
+        ))
+
+        self.cursor.execute('DROP TABLE {}$backup;'.format(table_name))
+
+    def __create_table(self, cls):
+        """
+        Consider cls as primitive type or as class with primitive attributes
+        :param cls: primitive type (int, str, ...,) or class with primitive attributes
+        :return: table name, id column name
+        """
+        table_name = self.__get_class_table_name(cls)
+        query_start = 'CREATE TABLE IF NOT EXISTS {} ({} INTEGER PRIMARY KEY AUTOINCREMENT, {} {}' \
+            .format(table_name,
+                    PY2SQL_COLUMN_ID_NAME,
+                    PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME,
+                    PY2SQL_OBJECT_PYTHON_ID_COLUMN_TYPE
+                    )
+
+        if self.__is_primitive_type(cls):
+            query = query_start + ', {} TEXT)'.format(PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME)
+        else:
+            data_fields = Py2SQL.__get_data_fields(cls)
+
+            fk_columns_query = ','.join(
+                ['{} REFERENCES {}(ID) DEFAULT {}'.format(
+                    Py2SQL.__get_base_class_table_reference_name(b),
+                    Py2SQL.__get_class_table_name(b),
+                    PY2SQL_DEFAULT_CLASS_BOUND_ROW_ID
+                ) for b in cls.__bases__ if b != object] +
+                ['{} TEXT DEFAULT \'{}\''.format(Py2SQL.__get_class_column_name(k), self.__get_sqlite_repr(v)) for
+                 k, v in data_fields]
+            )
+            if fk_columns_query:
+                fk_columns_query = ', ' + fk_columns_query
+
+            query = query_start + ' ' + fk_columns_query + ')'
+
+        print(query)
+        self.cursor.execute(query)
+
+        if not self.__is_primitive_type(cls):
+            if self.__table_is_empty(table_name):
+                self.cursor.execute('INSERT INTO {} DEFAULT VALUES'.format(table_name))
+
+        return table_name
+
+    def save_class(self, cls) -> None:
         """
         Save given class instance's representation into database or update it if it already exists
 
         Creates or updates tables structure to represent class object
+
         :param cls: class instance to be saved
-        :return: class table name
+        :return: None
         """
-        if Py2SQL.__is_primitive_type(cls):
-            (class_table_name, id_col) = self.__create_or_update_table(cls)
-            return class_table_name
+        table_name = Py2SQL.__get_class_table_name(cls)
+        if not self.__table_exists(table_name):
+            self.__create_table(cls)
+        if not self.__is_primitive_type(cls):
+            self.__update_table(cls)
 
-        for base_class in cls.__bases__:
-            if not base_class == object:
-                self.save_class(base_class)
-
-        tbl_name, id_name = self.__create_or_update_table(cls)
-
-        return tbl_name
+        self.connection.commit()
 
     def save_hierarchy(self, root_class) -> None:
         """
@@ -358,11 +398,12 @@ class Py2SQL:
         :return: None
         """
         table_name = Py2SQL.__get_object_table_name(obj)
-        self.cursor.execute('DELETE FROM {} WHERE ID = {};'.format(table_name, id(obj)))
-        if len(self.cursor.execute('SELECT ID FROM {}'.format(table_name)).fetchall()) == 0:
+        self.cursor.execute(
+            'DELETE FROM {} WHERE {} = {};'.format(table_name, PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME, id(obj)))
+        if self.__table_is_empty(table_name):
             self.cursor.execute('DROP TABLE {}'.format(table_name))
 
-        if hasattr(obj, '__dict__'):  # object
+        if not Py2SQL.__is_of_primitive_type(obj):  # object
             for value in obj.__dict__.values():
                 if not Py2SQL.__is_of_primitive_type(value):
                     self.delete_object(value)  # cascade delete
@@ -407,12 +448,12 @@ if __name__ == '__main__':
     py2sql = Py2SQL()
     py2sql.db_connect(database_filepath)
     # showcase_table_name = 'object_int'
-    #
+
     py2sql.save_object(1)
-    #
-    # f = 1.1
-    # py2sql.save_object(f)
-    # py2sql.delete_object(f)
+
+    f = 1.1
+    py2sql.save_object(f)
+    py2sql.delete_object(f)
     py2sql.save_object(2.2)
 
     py2sql.save_object('some str')
@@ -425,9 +466,10 @@ if __name__ == '__main__':
     a = array('i', [1, 2])
     py2sql.save_object(a)
 
-    sc = SampleClass(4)
-    py2sql.save_object(sc)
-    py2sql.save_object(sc)
+    sc1 = SampleClass(4)
+    py2sql.save_object(sc1)
+    sc1.new_attr = 5
+    py2sql.save_object(sc1)
     # py2sql.delete_object(sc)
     # py2sql.save_object(SampleClass())
     #
@@ -438,10 +480,16 @@ if __name__ == '__main__':
     # print('{} table structure:'.format(showcase_table_name), py2sql.db_table_structure(showcase_table_name))
     # print('{} table size:'.format(showcase_table_name), py2sql.db_table_size(showcase_table_name))
     #
-    # py2sql._Py2SQL__create_or_update_table(int)
+
     py2sql.save_class(B)
-    py2sql.save_class(F)
+    B.new_attr = 22
+    py2sql.save_class(B)
+    B.new_attr = 33
+    py2sql.save_class(B)
+    print(C.b.new_attr)
+    py2sql.save_class(C)
+    # py2sql.save_class(F)
     # py2sql.save_class(tuple)
-    # py2sql.save_hierarchy(A)
-    # py2sql.delete_hierarchy(E)
+    py2sql.save_hierarchy(A)
+    py2sql.delete_hierarchy(A)
     py2sql.db_disconnect()

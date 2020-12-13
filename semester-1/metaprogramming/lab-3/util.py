@@ -12,9 +12,12 @@ PY2SQL_BASE_CLASS_REFERENCE_PREFIX = 'BASE_REF'
 PY2SQL_ASSOCIATION_REFERENCE_PREFIX = 'ASSOCIATION_REF'
 PY2SQL_SEPARATOR = '$'
 
-PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME = 'value'
 PY2SQL_COLUMN_ID_TYPE = "INTEGER"
 PY2SQL_COLUMN_ID_NAME = "ID"
+PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME = 'value'
+PY2SQL_OBJECT_PYTHON_ID_COLUMN_TYPE = 'INTEGER'
+PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME = 'py_id'
+PY2SQL_DEFAULT_CLASS_BOUND_ROW_ID = 1
 
 
 def get_pk_attr(obj, suffix=''):
@@ -27,7 +30,7 @@ def get_pk_attr(obj, suffix=''):
     if hasattr(obj, pk_column_name):
         return get_pk_attr(obj, suffix=str(counter + 1))
 
-    return PY2SQL_COLUMN_ID_NAME
+    return pk_column_name
 
 
 def model_py2sql(c):
