@@ -395,7 +395,7 @@ class Py2SQL:
         :param tbl_name: table name to get corresponding class object of
         :return: class object
         """
-        module_nm, cls_nm = Py2SQL._get_class_name_by_table_name(tbl_name)
+        module_nm, cls_nm = Py2SQL.__get_class_name_by_table_name(tbl_name)
         cls_obj = None
         try:
             cls_obj = getattr(sys.modules[module_nm], cls_nm)
@@ -713,12 +713,94 @@ class Py2SQL:
 
         return w
 
-    def get_object_by_id(self, table_name, id):
-        pass
+    def __get_columns_names(self, table_name) -> list:
+        """
+        Retrieves from database table columns name for table with name provided
+
+        :param table_name: table name
+        :rtype: list
+        :return: columns names
+        """
+
+        self.cursor.execute('PRAGMA table_info({})'.format(table_name))
+        rows = self.cursor.fetchall()
+
+        return list(map(lambda t: t[1], list(rows)))
+
+    @staticmethod
+    def __get_tbl_nm_and_id_assoc(association_ref_value: str) -> tuple:
+        """
+        Retrieves from given string table name find references on and row id
+        :param association_ref_value:
+        :return: table name, id
+        :rtype: tuple
+        """
+        tbl_name = association_ref_value[association_ref_value.find(PY2SQL_SEPARATOR) + 1: association_ref_value.rfind(PY2SQL_SEPARATOR)]
+        id_ = int(association_ref_value[association_ref_value.rfind(PY2SQL_SEPARATOR) + 1:])
+        return tbl_name, id_
+
+    def get_object_by_id(self, table_name: str, id_: int, parent_obj=None) -> tuple:
+        """
+        Retrieves the object related data from table with table name and converts it into the object.
+        :param table_name: table name tp represent object
+        :param id_: row id was given to the object as it was inserted
+        :param parent_obj: do not use this param externally
+        """
+        ob = None
+        py_id, db_id = -1, -1
+
+        try:
+            cls_o = Py2SQL.__get_class_object_by_table_name(table_name)
+            obj = cls_o.__new__(cls_o)
+            cols_names = self.__get_columns_names(table_name)
+            q = "SELECT * FROM {} WHERE {}={}".format(table_name, PY2SQL_COLUMN_ID_NAME, id_)
+            self.cursor.execute(q)
+            row = self.cursor.fetchone()
+
+            if Py2SQL.__is_primitive_type(cls_o):
+                for i in range(len(row)):
+                    if cols_names[i] == PY2SQL_COLUMN_ID_NAME:
+                        db_id = row[i]
+                    elif cols_names[i] == PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME:
+                        py_id = row[i]
+                    elif cols_names[i] == PY2SQL_PRIMITIVE_TYPES_VALUE_COLUMN_NAME:
+                        ob = cls_o(eval(row[i]))
+            else:
+                if parent_obj is not None:
+                    obj = parent_obj
+                for i in range(len(row)):
+                    if cols_names[i] == PY2SQL_COLUMN_ID_NAME:
+                        db_id = row[i]
+                    elif cols_names[i] == PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME:
+                        py_id = row[i]
+                    elif cols_names[i].startswith(PY2SQL_BASE_CLASS_REFERENCE_PREFIX):
+                        ref_tbl_name = cols_names[i][cols_names[i].rfind(PY2SQL_SEPARATOR) + 1:]
+                        ref_id = int(row[i])
+                        self.get_object_by_id(ref_tbl_name, ref_id, obj)
+                    elif cols_names[i].startswith(PY2SQL_OBJECT_ATTR_PREFIX):
+                        attr_real_name = cols_names[cols_names.rfind(PY2SQL_SEPARATOR) + 1:]
+                        if row[i].startswith(PY2SQL_ASSOCIATION_REFERENCE_PREFIX):
+                            tbl_nm, prm_id = Py2SQL.__get_tbl_nm_and_id_assoc(row[i])
+                            if attr_real_name.startswith("__"):
+                                attr_mdf = "_" + cls_o.__name__ + attr_real_name
+                                setattr(obj, attr_mdf, self.get_object_by_id(tbl_nm, prm_id)[0])
+                            else:
+                                setattr(obj, attr_real_name, self.get_object_by_id(tbl_nm, prm_id)[0])
+                        else:
+                            if attr_real_name.startswith("__"):
+                                attr_mdf = "_" + cls_o.__name__ + attr_real_name
+                                setattr(obj, attr_mdf, row[i])
+                            else:
+                                setattr(obj, attr_real_name, row[i])
+                ob = obj
+
+        except Exception:
+            print("exc")
+        return ob, db_id, py_id
 
 if __name__ == '__main__':
     database_filepath = 'example.db'
-    os.remove(database_filepath)
+    # os.remove(database_filepath)
 
     logfile = "logs.txt"
     py2sql = Py2SQL(True, logfile)
@@ -776,5 +858,8 @@ if __name__ == '__main__':
     # py2sql.delete_hierarchy(A)
 
     print(py2sql.db_table_size('demo_classes$SampleClass'))
+
+    prim_ob = py2sql.get_object_by_id("builtins$list", 1)
+    print(str(prim_ob))
 
     py2sql.db_disconnect()
