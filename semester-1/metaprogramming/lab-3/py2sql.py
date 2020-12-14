@@ -303,19 +303,22 @@ class Py2SQL:
         :return: sqlite representation of an object to be stored in the respective database table
         """
         if obj is None:
-            return None
-        if type(obj) == array:
-            return '{}("{}", {})'.format(type(obj).__name__, obj.typecode, list(obj))
-        if type(obj) == frozenset:
-            return str(obj)
-        if type(obj) == str:
-            return '{}("{}")'.format(type(obj).__name__, obj)
+            result = None
+        elif type(obj) == array:
+            result = '{}("{}", {})'.format(type(obj).__name__, obj.typecode, list(obj))
+        elif type(obj) == frozenset:
+            result = str(obj)
+        elif type(obj) == str:
+            result = '{}("{}")'.format(type(obj).__name__, obj)
         elif Py2SQL.__is_of_primitive_type(obj):
-            return '{}({})'.format(type(obj).__name__, obj)
+            result = '{}({})'.format(type(obj).__name__, obj)
         elif isfunction(obj):
-            return getsource(obj).replace("'", '"')
+            result = getsource(obj)
         else:  # object
-            return Py2SQL.__get_association_reference(obj, self.save_object(obj))
+            result = Py2SQL.__get_association_reference(obj, self.save_object(obj))
+
+        if result is not None:
+            return result.replace("'", '"')
 
     @staticmethod
     def __is_of_primitive_type(obj) -> bool:
@@ -571,6 +574,9 @@ class Py2SQL:
         table_name = Py2SQL.__get_class_table_name(cls)
         if not self.__table_exists(table_name):
             self.__create_table(cls)
+            for base in cls.__bases__:
+                if not base == object:
+                    self.__create_table(base)
         if not self.__is_primitive_type(cls):
             self.__update_table(cls)
 
@@ -797,69 +803,3 @@ class Py2SQL:
         except Exception:
             print("exc")
         return ob, db_id, py_id
-
-if __name__ == '__main__':
-    database_filepath = 'example.db'
-    # os.remove(database_filepath)
-
-    logfile = "logs.txt"
-    py2sql = Py2SQL(True, logfile)
-
-    py2sql.db_connect(database_filepath)
-    # showcase_table_name = 'object_int'
-
-    py2sql.save_object(1)
-
-    f = 1.1
-    py2sql.save_object(f)
-    py2sql.delete_object(f)
-    py2sql.save_object(2.2)
-
-    py2sql.save_object('some str')
-    py2sql.save_object([1, 2])
-    py2sql.save_object((1, 2))
-    py2sql.save_object({1, 2})
-    py2sql.save_object(frozenset((1, 2)))
-    py2sql.save_object({'key': 'str', 1: 'int', (1, 2, 3): 'tuple'})
-
-    a = array('i', [1, 2])
-    py2sql.save_object(a)
-
-    sc1 = SampleClass(4)
-    py2sql.save_object(sc1)
-    sc1.new_attr = 'ASSOCIATION_REF$demo_classes_AssociatedClass$2'  # naming collision will never occur!
-    py2sql.save_object(sc1)
-
-    # crash code !
-    sc1.int_object_attr = 999
-    m = ModelPy2SQL(sc1, 2)
-    py2sql.save_object_with_update(m)
-    # py2sql.delete_object(sc1)
-    # py2sql.save_object(SampleClass())
-    #
-    # print('Engine:', py2sql.db_engine())
-    # print('Name:', py2sql.db_name())
-    # print('Size in Mb:', py2sql.db_size())
-    # print('Tables:', py2sql.db_tables())
-    # print('{} table structure:'.format(showcase_table_name), py2sql.db_table_structure(showcase_table_name))
-    # print('{} table size:'.format(showcase_table_name), py2sql.db_table_size(showcase_table_name))
-    #
-
-    py2sql.save_class(B)
-    B.new_attr = 22
-    py2sql.save_class(B)
-    B.new_attr = 33
-    py2sql.save_class(B)
-    py2sql.save_class(C)
-    # py2sql.delete_class(C)
-    # py2sql.save_class(F)
-    # py2sql.save_class(tuple)
-    # py2sql.save_hierarchy(A)
-    # py2sql.delete_hierarchy(A)
-
-    print(py2sql.db_table_size('demo_classes$SampleClass'))
-
-    prim_ob = py2sql.get_object_by_id("builtins$list", 1)
-    print(str(prim_ob))
-
-    py2sql.db_disconnect()
