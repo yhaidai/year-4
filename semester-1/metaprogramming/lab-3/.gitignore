@@ -5,3 +5,4 @@ notes.txt
 logs.txt
 
 *.db
+pypi_test.py

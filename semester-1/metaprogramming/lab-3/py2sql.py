@@ -109,7 +109,10 @@ class Py2SQL:
         :param table_name: name of the table to retrieve structure of
         :return: ordered list of tuples of form (id, name, type)
         """
-        return list(map(lambda x: x[:3], self.cursor.execute('PRAGMA table_info(' + table_name + ');').fetchall()))
+        try:
+            return list(map(lambda x: x[:3], self.cursor.execute('PRAGMA table_info(' + table_name + ');').fetchall()))
+        except sqlite3.OperationalError:
+            return []
 
     def db_table_size(self, table_name: str) -> float:
         """
@@ -141,7 +144,7 @@ class Py2SQL:
                 elif type(r[i]) == int:
                     bytes_size += int_size
                 elif type(r[i]) == str:
-                    bytes_size += len(r[i]) * text_charsize
+                    bytes_size += len(r[i].encode('utf-8'))
                 else:
                     continue
 
@@ -160,10 +163,7 @@ class Py2SQL:
         table_name = Py2SQL.__get_object_table_name(obj)
         # print('saving', obj, 'to', table_name, 'id:', id(obj))
 
-        if not self.__table_exists(table_name):
-            self.__create_table(type(obj))
-        else:
-            self.__update_table(type(obj))
+        self.save_class(type(obj))
 
         if not Py2SQL.__is_of_primitive_type(obj):  # object
             values = []
@@ -194,7 +194,7 @@ class Py2SQL:
                 PY2SQL_COLUMN_ID_NAME
             )
             params = (*values, obj_pk)
-            # print(query, params)
+            print(query, params)
             self.cursor.execute(query, params)
             self.connection.commit()
             return obj_pk
@@ -204,7 +204,7 @@ class Py2SQL:
             ', '.join(columns),
             ('?,' * len(values))[:-1]
         )
-        # print(query, values)
+        print(query, values)
 
         try:
             self.cursor.execute(query, values)
@@ -549,7 +549,7 @@ class Py2SQL:
         :rtype: bool
         :return: True if table is empty, False otherwise
         """
-        return self.cursor.execute('SELECT count(*) FROM {}'.format(table_name)).fetchone()[0] == 0
+        return self.cursor.execute('SELECT count(*) FROM {}'.format(table_name)).fetchone()[0] < 2
 
     def __get_object_bound_columns(self, table_name) -> str:
         """
@@ -664,7 +664,7 @@ class Py2SQL:
         columns_query = ', '.join(columns - set(to_be_added))
         query = 'INSERT INTO {}({}) SELECT {} FROM {}$backup WHERE {} <> ?;'.format(
             table_name, columns_query, columns_query, table_name, PY2SQL_OBJECT_PYTHON_ID_COLUMN_NAME)
-        # print(query)
+        print(query)
         self.cursor.execute(
             query, (PY2SQL_DEFAULT_CLASS_BOUND_ROW_ID,)
         )
@@ -699,7 +699,7 @@ class Py2SQL:
 
             query = query_start + ' ' + columns_query + ')'
 
-        # print(query)
+        print(query)
         self.cursor.execute(query)
 
         if not self.__is_primitive_type(cls):
@@ -724,7 +724,7 @@ class Py2SQL:
             self.__create_table(cls)
             for base in cls.__bases__:
                 if not base == object:
-                    self.__create_table(base)
+                    self.save_class(base)
         if not self.__is_primitive_type(cls):
             self.__update_table(cls)
 
@@ -763,17 +763,40 @@ class Py2SQL:
 
         self.connection.commit()
 
-    def delete_class(self, cls) -> None:
+    def __get_objects(self, cls):
+        return self.cursor.execute('SELECT * from {};'.format(Py2SQL.__get_class_table_name(cls))).fetchall()
+
+    def delete_class(self, cls, cascade=False) -> None:
         """
         Delete given class instance's representation from database if it already existed.
 
         Drops corresponding table.
 
         :param cls: object instance to be delete
+        :type cascade: bool
+        :param cascade: whether to perform cascade delete
         :return: None
         """
         tbl_name = Py2SQL.__get_class_table_name(cls)
-        query = "DROP TABLE IF EXISTS {}".format(tbl_name)
+        query = 'DROP TABLE IF EXISTS {}'.format(tbl_name)
+
+        if cascade:
+            for base in cls.__bases__:
+                self.delete_class(base)
+
+            objects = self.__get_objects(cls)
+            for obj in objects:
+                for entry in obj:
+                    if str(entry).startswith(PY2SQL_ASSOCIATION_REFERENCE_PREFIX):
+                        ref_table_name = PY2SQL_SEPARATOR.join(entry.split(PY2SQL_SEPARATOR)[1:-1])
+                        ref_id = entry.split(PY2SQL_SEPARATOR)[-1]
+                        self.cursor.execute(
+                            'DELETE FROM {} WHERE {} = ?;'.format(ref_table_name, PY2SQL_COLUMN_ID_NAME),
+                            ref_id
+                        )
+                        if self.__table_is_empty(ref_table_name):
+                            self.cursor.execute('DROP TABLE IF EXISTS {}'.format(ref_table_name))
+
         self.cursor.execute(query)
         self.connection.commit()
 
